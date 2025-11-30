@@ -1,0 +1,206 @@
+=====================
+2025-11-27 14:59:38
+=====================
+
+Query:
+what is JB Hi-Fi's market share in the electronics category?
+
+Answer:
+- Oct-2025: JB Hi-Fi's market share in the electronics category has increased by 88 basis points for JB Hi-Fi Australia and 56 basis points for The Good Guys in 1H25, with three-quarters of these gains attributed to online growth [S3 p1 "JB Hi-Fi Australia gained 88bp of market share"].
+- Oct-2025: JB Hi-Fi's market share in Australia has grown from 36% to 42% over the past five years, driven by market share gains and higher price inflation in electronics [S4 p1 "JB Hi-Fi has lifted its market share from 36% to 42% in Australia"].
+
+
+Sources Used:
+- JBH 1H25 result analysis CJW 250210 — p.1 — "JB Hi-Fi Australia gained 88bp of market share"
+- JBH at 90 bucks CJW 241119 — p.1 — "JB Hi-Fi has lifted its market share from 36% to 42% in Australia"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:02:23
+=====================
+
+Query:
+What are the key issues following Woolworths most recent result?
+
+Answer:
+- Oct-2025: Woolworths is facing scrutiny due to a widening sales growth gap with Coles, with Woolworths forecasted at 1.6% compared to Coles at 4.2% for 1Q26e, potentially leading to intensified scrutiny on Woolworths' Board and management if this trend continues [S1 p1 "growth gap has opened in Coles’ favour"].
+- Oct-2025: Woolworths' gross margins are under pressure, with concerns that they are at an unsustainable level to drive a sales-led recovery, as the company focuses on cost savings and squeezing more out of suppliers [S1 p1 "gross margins are at an unsustainable level"].
+- Oct-2025: Woolworths has launched a "Customer Offer Reset" program aimed at consolidating operations across Australia, New Zealand, and Big W, but faces challenges due to already high gross margins in Australia, which may limit supplier support [S1 p1 "Customer Offer Reset (COR) with suppliers"].
+
+Sources Used:
+- WOW and COL 1Q26e sales preview CJW 251023 v2 — p.1 — "growth gap has opened in Coles’ favour"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:03:12
+=====================
+
+Query:
+What are the top priorities at Coles?
+
+Answer:
+- Oct-2025: Coles is expected to achieve a 12.5% EBIT growth in FY26e due to better sales, one-off costs rolling off, and supply chain savings [S1 p1 "better sales, one-off costs from last year rolling off"].
+- Oct-2025: Coles Supermarkets reported a 7.0% increase in 4Q25 sales excluding tobacco, with continued growth in the first eight weeks of FY26e, indicating market share gains [S1 p1 "Supermarkets reported 4Q25 sales ex tobacco up 7.0%"].
+- Oct-2025: Coles Liquor is forecasted to experience a 2% EBIT decline to $111 million in FY26e, with market share losses expected due to store closures and rebranding costs [S1 p1 "forecast another 2% decline to $111 million in FY26e"].
+
+Sources Used:
+- COL FY25 result analysis CJW 250826 — p.1 — "better sales, one-off costs from last year rolling off"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:03:25
+=====================
+
+Query:
+What are the issues on the minds of JB Hi-Fi management?
+
+Answer:
+- Oct-2025: JB Hi-Fi management is focused on addressing the impact of price inflation on sales growth, which is expected to slow to 3.7% for JB Hi-Fi and 3.3% for The Good Guys in FY26e [S2 p1 "sales growth of 3%-4% for JB Hi-Fi"].
+- Oct-2025: Management is concerned about maintaining EBIT margins as a higher portion of sales growth is expected to come from low-margin businesses, with wage and rent cost growth remaining elevated [S2 p1 "higher portion of sales growth will come from low margin"].
+- Oct-2025: The company is preparing for a potential slowdown in comparable sales growth, with forecasts of 3.7% for JB Hi-Fi Australia and 3.3% for The Good Guys in FY26e [S2 p4 "forecast FY26e comp sales growth of 3.7% for JB Hi-Fi"].
+
+Sources Used:
+
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:03:39
+=====================
+
+Query:
+Summarise Woolworths most recent result.
+
+Answer:
+- Oct-2025: Woolworths is forecasted to have a comparable sales growth of 1.6% for 1Q26e, indicating a slower growth compared to Coles at 4.2% [S1 p1 "forecast Coles comparable sales growth of 4.2% and Woolworths at 1.6%"].
+- Oct-2025: Woolworths has launched a program called Customer Offer Reset (COR) with suppliers, aiming to consolidate operations across Woolworths Australia, Woolworths NZ, and Big W [S1 p1 "Woolworths launched a program called Customer Offer Reset (COR)"].
+- Oct-2025: Woolworths is expected to face a slight decline in liquor comparable sales at -0.6% for 1Q26e, reflecting ongoing challenges in the liquor retail sector [S1 p1 "forecast Coles Liquor comps at -0.3% and Woolworths at -0.6%"].
+
+Sources Used:
+- WOW and COL 1Q26e sales preview CJW 251023 v2 — p.1 — "forecast Coles comparable sales growth of 4.2% and Woolworths at 1.6%"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:04:01
+=====================
+
+Query:
+How did Bunnings perform in FY25?
+
+Answer:
+- Oct-2025: Bunnings reported a 3% increase in 1H25 sales and a 4% rise in EBIT, reflecting modest growth due to a high baseline from the COVID-19 boom and elevated operating costs [S2 p1 "Bunnings 1H25 sales increased 3% and EBIT was up 4%"].
+- Oct-2025: Bunnings is expected to achieve mid single-digit EBIT growth over the next three years, with potential margin expansion linked to a recovery in the residential construction cycle [S1 p1 "We see mid single-digit EBIT growth for Bunnings over the next three years"].
+- Oct-2025: Bunnings launched Hammer Media, a retail media platform, which could potentially add $100-200 million in EBIT over time by monetizing its strong in-store and online traffic [S1 p1 "Bunnings has launched Hammer Media. This is its retail media platform"].
+
+Sources Used:
+- WES Bunnings site tour 2025 CJW 250326 — p.1 — "We see mid single-digit EBIT growth for Bunnings over the next three years"
+- WES 1H25 result analysis CJW 250220 — p.1 — "Bunnings 1H25 sales increased 3% and EBIT was up 4%"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:04:19
+=====================
+
+Query:
+Where is Coles winning market share?
+
+Answer:
+- Oct-2025: Coles has experienced market share gains in its Supermarkets division, with 4Q25 sales excluding tobacco up 7.0%, outperforming the estimated industry growth of 5.5% [S1 p1 "sales ex tobacco up 7.0% and continued that growth"].
+- Oct-2025: Coles gained 39 basis points of supermarket market share year-on-year in 4Q25, driven by strong eCommerce growth and improved sales momentum [S1 p4 "gained 39bp of supermarket market share year-on-year"].
+- Oct-2025: Coles' online sales contributed 2.6 percentage points to comparable sales in 4Q25, highlighting the impact of eCommerce on market share gains [S1 p4 "online contributed 2.6 percentage points to comp sales"].
+
+Sources Used:
+
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:04:57
+=====================
+
+Query:
+What is the gross margin differential between Coles and Woolworths supermarkets?
+
+Answer:
+- Oct-2025: Woolworths generates better gross margins than Coles, with a margin difference of 250 basis points in Woolworths' favor [S1 p1 "Woolworths Australia already generates much better gross margins"].
+- Oct-2025: Woolworths' gross margins are 122 basis points higher than Coles, reflecting a significant advantage in pricing and supplier negotiations [S3 p4 "gross margins are 122bp higher than Coles"].
+
+Sources Used:
+- WOW and COL 1Q26e sales preview CJW 251023 v2 — p.1 — "Woolworths Australia already generates much better gross margins"
+- WOW FY25 result analysis CJW 250827 — p.4 — "gross margins are 122bp higher than Coles"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:05:05
+=====================
+
+Query:
+What is the comparable sales growth outlook for Coles?
+
+Answer:
+- Oct-2025: Coles Supermarkets is expected to achieve a comparable sales growth of 3.3% for FY26e, including tobacco, or 4.2% excluding tobacco [S1 p1 "forecast Coles Supermarket comp sales growth of 3.3% for FY26e"].
+- Oct-2025: Coles reported 4Q25 sales ex tobacco up 7.0% and continued that growth in the first eight weeks of FY26e [S1 p1 "Coles Supermarkets reported 4Q25 sales ex tobacco up 7.0%"].
+
+Sources Used:
+- COL FY25 result analysis CJW 250826 — p.1 — "forecast Coles Supermarket comp sales growth of 3.3% for FY26e"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 15:06:11
+=====================
+
+Query:
+What are the issues on the minds of JB Hi-Fi management?
+
+Answer:
+- Oct-2025: JB Hi-Fi management is concerned about the impact of price inflation on sales growth, with expectations of a slowdown to 3.7% for JB Hi-Fi and 3.3% for The Good Guys in FY26e [S2 p1 "we expect a slowdown to 3.7% for JB Hi-Fi"].
+- Oct-2025: The company is facing challenges with elevated operating costs, which are expected to limit profit margin expansion in FY26e [S2 p1 "operating cost growth will remain elevated"].
+- Oct-2025: JB Hi-Fi is dealing with the risk of increased competition from online retailers like Amazon, which could impact sales momentum [S2 p11 "risk of higher competition from online pure-play retailers like Amazon"].
+
+Sources Used:
+
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 17:05:41
+=====================
+
+Query:
+What is Amazon's revenue in Australia?
+
+Answer:
+- Oct-2025: Amazon's gross transaction value in Australia rose by 33% in 2024, equating to a $1.7 billion increase, capturing one-third of the growth in non-food retail [S1 p1 "gross transaction value rose by 33%, or $1.7 billion"].
+- Oct-2025: Amazon's market share in Australia is 12% of the online market, with expectations to reach 15-16% over the next five years [S1 p1 "Amazon is only 12% of Australian online"].
+
+Sources Used:
+- Amazon 2024 performance and comparison NDH 250305 — p.1 — "gross transaction value rose by 33%, or $1.7 billion"
+
+-------------------------------------------------------------
+
+=====================
+2025-11-27 17:06:34
+=====================
+
+Query:
+What are the strategic priorities for Woolworths?
+
+Answer:
+- Oct-2025: Woolworths is focusing on a cost-saving initiative called Customer Offer Reset (COR) to consolidate operations across Australia, New Zealand, and Big W, despite concerns about supplier support due to already high gross margins in Australia [S1 p1 "Woolworths launched a program called Customer Offer Reset"].
+- Oct-2025: Woolworths is prioritizing becoming the first choice for fresh Australian food, improving returns in New Zealand and Big W, and growing complementary businesses such as retail media and foodservice [S3 p1 "CEO Amanda Bardwell outlined three strategic priorities"].
+- Oct-2025: Woolworths plans to enhance sales productivity in supermarkets, aiming for a 1% increase in sales per square meter, which could add $500 million in revenue and up to $50 million in EBIT [S7 p1 "Each 1% in sales per sqm is worth $500 million"].
+
+Sources Used:
+- WOW and COL 1Q26e sales preview CJW 251023 v2 — p.1 — "Woolworths launched a program called Customer Offer Reset"
+- WOW FY25 result analysis CJW 250827 — p.1 — "CEO Amanda Bardwell outlined three strategic priorities"
+- WOW Amanda Barwell questions CJW 240803 — p.1 — "Each 1% in sales per sqm is worth $500 million"
+
+-------------------------------------------------------------
+
