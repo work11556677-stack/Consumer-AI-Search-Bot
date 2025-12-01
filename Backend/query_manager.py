@@ -2,26 +2,20 @@ import config
 import openai_manager
 import database_manager
 
-from typing import Dict, List, Tuple, Optional, Sequence, Any
-import json
+
+import os
 import re
-import numpy as np
-import sqlite3
+import html
+import json
 import math
+import sqlite3
+import numpy as np
+from pathlib import Path
 from fastapi import Query
 from datetime import datetime
-from pathlib import Path
 from urllib.parse import quote
 from urllib.parse import quote as urlquote, urlparse, unquote
-import html
-import os
-import json
-from datetime import datetime
-from pathlib import Path
-import json
-import re
-from datetime import datetime
-
+from typing import Dict, List, Tuple, Optional, Sequence, Any
 
 
 
@@ -60,30 +54,28 @@ def append_qa_output(question: str, summary_md: str, citations: list, references
 
     # Build final block
     block = f"""
-=====================
-{ts}
-=====================
+    =====================
+    {ts}
+    =====================
 
-Query:
-{question}
+    Query:
+    {question}
 
-Answer:
-{summary_md}
+    Answer:
+    {summary_md}
 
-Sources Used:
-{sources_formatted}
+    Sources Used:
+    {sources_formatted}
 
--------------------------------------------------------------
+    -------------------------------------------------------------
 
-""".lstrip()
+    """.lstrip()
 
     # Append to file
     with open(config.OUTPUT_FILE, "a", encoding="utf-8") as f:
         f.write(block)
 
     print(f"[log] Output appended to {config.OUTPUT_FILE}")
-
-    
 
 def parse_sources_from_llm_output(llm_output: str):
     """
@@ -132,12 +124,9 @@ def parse_sources_from_llm_output(llm_output: str):
 
 
 
-
 # =========================================
 # Step 1: Parse input query AND (Extract Known Company OR (Use LLM Extract Company AND Search database))
 # =========================================
-
-
 def classify_use_case(q: str) -> Dict[str, Any]:
     ql = q.lower()
     # ======================
@@ -240,8 +229,6 @@ def classify_use_case(q: str) -> Dict[str, Any]:
     print(f"query_manager:classify_use_case:DEBUG {config.CLASSIFY_MODEL} -> {out}")
     return out
 
-
-
 def handle_use_case_1(q, tokens, tickers, conn):
     """
     Runs the original use_case_1 workflow.
@@ -298,8 +285,6 @@ def handle_use_case_1(q, tokens, tickers, conn):
 
 
     return pool, tickers, extra_terms
-
-
 
 def handle_use_case_2(q, tokens, out, conn):
     """
@@ -386,7 +371,6 @@ def handle_use_case_2(q, tokens, out, conn):
 
     return pool, tickers, extra_terms
 
-
 def _parse_query(q: str):
     return [t for t in re.split(r"[^A-Za-z0-9\+\&]+", (q or "").strip()) if t]
 
@@ -408,7 +392,6 @@ def _aliases_for_tickers(tickers):
         if s not in seen:
             seen.add(s); res.append(s)
     return res
-
 
 def llm_determine_company(user_query: str) -> Optional[Dict[str, Any]]:
     """
@@ -439,41 +422,41 @@ def llm_determine_company(user_query: str) -> Optional[Dict[str, Any]]:
     )
 
     user = f"""
-User query:
-{user_query}
+    User query:
+    {user_query}
 
-Task:
-1. Decide if this query is primarily about a single company or consumer-facing brand
-   (e.g., "Amazon", "Shein", "TikTok", "Temu", "Costco", "Bunnings", "Kmart", etc.).
-2. If YES, output JSON in this exact shape:
+    Task:
+    1. Decide if this query is primarily about a single company or consumer-facing brand
+    (e.g., "Amazon", "Shein", "TikTok", "Temu", "Costco", "Bunnings", "Kmart", etc.).
+    2. If YES, output JSON in this exact shape:
 
-{{
-  "company_name": "<Full or formal name if you know it>",  // e.g. "Amazon.com, Inc."
-  "short_name": "<short display name>",                    // e.g. "Amazon"
-  "aliases": [
-    "<common way the company is referred to in text>",
-    "<brand/store names it operates under>",
-    "<plausible spelling variants>",
-    ...
-  ]
-}}
+    {{
+    "company_name": "<Full or formal name if you know it>",  // e.g. "Amazon.com, Inc."
+    "short_name": "<short display name>",                    // e.g. "Amazon"
+    "aliases": [
+        "<common way the company is referred to in text>",
+        "<brand/store names it operates under>",
+        "<plausible spelling variants>",
+        ...
+    ]
+    }}
 
-Guidelines:
-- short_name should be what usually appears as a single token or 1–2 words (e.g. "Amazon").
-- aliases should include things like:
-  - direct brand names (e.g. "Amazon", "Amazon Australia")
-  - domain-style names (e.g. "amazon.com")
-  - key consumer-facing products if they might be used as a stand-in for the company
-    (e.g. "Amazon Prime", "Prime Video" for Amazon).
-- Do NOT include generic words like "online", "shopping", "app" as aliases.
+    Guidelines:
+    - short_name should be what usually appears as a single token or 1–2 words (e.g. "Amazon").
+    - aliases should include things like:
+    - direct brand names (e.g. "Amazon", "Amazon Australia")
+    - domain-style names (e.g. "amazon.com")
+    - key consumer-facing products if they might be used as a stand-in for the company
+        (e.g. "Amazon Prime", "Prime Video" for Amazon).
+    - Do NOT include generic words like "online", "shopping", "app" as aliases.
 
-3. If there is NO clear single company or brand:
-   return exactly:
-   {{"company_name": null, "short_name": null, "aliases": []}}
+    3. If there is NO clear single company or brand:
+    return exactly:
+    {{"company_name": null, "short_name": null, "aliases": []}}
 
-IMPORTANT:
-- Output MUST be valid JSON only (no backticks, no explanation).
-"""
+    IMPORTANT:
+    - Output MUST be valid JSON only (no backticks, no explanation).
+    """
 
     resp = openai_manager.CLIENT.chat.completions.create(
         model=config.LLM_MODEL,
@@ -525,7 +508,6 @@ IMPORTANT:
         "short_name": short_name or company_name,
         "aliases": aliases,
     }
-
 
 def dynamic_company(
     user_query: str,
@@ -722,10 +704,11 @@ def dynamic_company(
     print(f"dynamic_company: built dynamic off-book pool size={len(pool)}")
     return pool
 
+
+
 # =========================================
 # Step 2: fetch and rank docs that relate to company 
 # =========================================
-
 def get_doc_path_date(conn, document_id):
     """
     Load meta JSON from document table, extract absolute_path,
@@ -762,7 +745,6 @@ def get_doc_path_date(conn, document_id):
 
     return full_date
 
-
 def _score_with_extra_terms(rows, extra_terms):
     terms = [t.lower() for t in extra_terms if t]
     def parse_dt(s):
@@ -790,10 +772,6 @@ def _score_with_extra_terms(rows, extra_terms):
         seen.add(did); out.append(r)
     return out
 
-
-
-
-
 def _safe_key(row, key):
     # sqlite3.Row supports "in" for keys
     return row[key] if key in row.keys() else None
@@ -817,7 +795,6 @@ def _derive_doc_fields(row):
     source_path = _safe_key(row, "source_path") or meta.get("source_path") or meta.get("path") or ""
 
     return title, published_at, source_url, source_path
-
 
 def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list[dict]:
     """
@@ -869,7 +846,6 @@ def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list
                 continue
     print("_fetch_doc_chunks_robust: no layouts matched; returning []")
     return []
-
 
 def _build_context_blocks(conn: sqlite3.Connection, picked_docs: list[dict]):
     """
@@ -978,7 +954,6 @@ def build_doc_link_from_meta(meta_json: str, page: int | None = None) -> str | N
     if page:
         url += f"#page={int(page)}"
     return url
-
 
 def _link_for_citation(sources: list[dict], S: int, page: int, quote: str) -> str:
     """
@@ -1102,9 +1077,6 @@ def markdown_to_html(md: str, link_map: dict | None = None) -> str:
     close_list()
     return "".join(html_out)
 
-
-
-## Main
 def llm_summarize_persona(
     conn,
     context_blocks: List[str],
@@ -1353,7 +1325,6 @@ def canonicalize_to_primary(abs_path: str | Path | None) -> Path | None:
 
     return None
 
-
 def abs_path_to_media_docx_url(abs_path: str | Path | None, page: int | None = None) -> str | None:
     """
     Convert an absolute (possibly ...copy) path to a /media/docx URL served by FastAPI,
@@ -1371,7 +1342,6 @@ def abs_path_to_media_docx_url(abs_path: str | Path | None, page: int | None = N
     if page:
         url += f"#page={page}"
     return url
-
 
 def build_click_url_from_row(
     db_label: str,
@@ -1426,6 +1396,9 @@ def build_click_url_from_row(
 
 
 
+# =========================================
+# MAIN
+# =========================================
 def main(q, top_k, conn):
     print(f"query_manager:main:FLOW: entered overview with q='{q}' top_k={top_k}")
     top_k = 10
