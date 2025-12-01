@@ -93,3 +93,4 @@ REWRITE_PPAR   = 3
 OVERVIEW_TOP_K = 16
 
 _CIT_MARK = re.compile(r'\[S(?P<S>\d+)\s+p(?P<page>\d+)\s+"(?P<quote>[^"]+)"\]')
+DATE_RE = re.compile(r"(\d{6})")  # matches yymmdd

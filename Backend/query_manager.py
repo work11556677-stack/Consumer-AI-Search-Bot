@@ -18,6 +18,11 @@ import os
 import json
 from datetime import datetime
 from pathlib import Path
+import json
+import re
+from datetime import datetime
+
+
 
 
 ## random helpers 
@@ -243,49 +248,54 @@ def handle_use_case_1(q, tokens, tickers, conn):
     Returns: pool, tickers, extra_terms
     """
     cues: List[str] = []
-    ql = q.lower()
-
-    # 1. Use tickers → aliases
-    if tickers:
+    if tickers: 
         cues.extend(_aliases_for_tickers(tickers))
     else:
-        # Scan aliases & legal names directly
+        # no obvious ticker: scan they query for any known aliases or legal name 
         flat = set()
         for tk, arr in config.ALIASES.items():
             flat.update(arr)
         flat.update(config.ASX_COMPANIES.values())
         flat.update(config.ASX_COMPANIES.keys())
+        ql = q.lower()
         cues.extend([a for a in flat if a and a.lower() in ql])
 
-    print(f"[UC1] cues(len)={len(cues)} sample={cues[:10]}")
 
-    # 2. Resolve company_ids
+    print(f"query_manager:handle_use_case_1:DEBUG: cues(len)={len(cues)} sample={cues[:10]}")
+
+
     company_ids = database_manager.resolve_company_ids(conn, cues)
-    print(f"[UC1] company_ids={company_ids}")
+    print(f"query_manager:handle_use_case_1:DEBUG: company_ids: {company_ids}")
 
-    # Fallback: direct ticker match
     if not company_ids and tickers:
         company_ids = database_manager.resolve_company_ids(conn, tickers)
-        print(f"[UC1] fallback company_ids via tickers={company_ids}")
+        print(f"fallback company_ids via tickers={company_ids}")
 
-    # 3. Compute extra_terms (non-company words)
+    # Pre-compute non-company terms for ranking (used later regardless of mode)
     company_words = set(w.lower() for w in cues + tickers)
     extra_terms = [t for t in tokens if t and t.lower() not in company_words]
-    print(f"[UC1] extra_terms={extra_terms}")
+    print(f"extra_terms={extra_terms}")
 
-    # 4. Build pool
+    # =========================================
+    # STEP 1B: If no company found statically → use LLM to determine company
+    #          and build a dynamic doc pool at inference time.
+    #          If that also fails (no docs), we RETURN and do not continue.
+    # =========================================
     if company_ids:
+        # ---- Static path: use precomputed company_term_count
         pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=200)
-        print(f"[UC1] pool_size={len(pool)} (static)")
-
+        print(f"pool_size={len(pool)} (static company_term_count path)")
     else:
-        print("[UC1] No company match → dynamic path")
+        # ---- Dynamic path: let LLM pick a company, then scan docs
+        print("No company_ids from static extraction → entering dynamic LLM company path.")
         pool = dynamic_company(q, conn, limit_pool=200)
-        print(f"[UC1] pool_size={len(pool)} (dynamic)")
+        print(f"pool_size={len(pool)} (dynamic LLM company path)")
 
+        # If dynamic path also fails → abort (no reports to summarise)
         if not pool:
-            print("[UC1] No docs found → abort")
-            return None, None, None
+            print("No reports found via static or dynamic company extraction → aborting.")
+            return  # early exit; caller will see None
+
 
     return pool, tickers, extra_terms
 
@@ -715,6 +725,42 @@ def dynamic_company(
 # =========================================
 # Step 2: fetch and rank docs that relate to company 
 # =========================================
+
+def get_doc_path_date(conn, document_id):
+    """
+    Load meta JSON from document table, extract absolute_path,
+    find a YYMMDD date in the path, return datetime object.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT meta FROM document WHERE document_id=?", (document_id,))
+    row = cur.fetchone()
+    if not row or not row[0]:
+        return None
+
+    try:
+        meta = json.loads(row[0])
+    except:
+        return None
+
+    abs_path = meta.get("absolute_path")
+    if not abs_path:
+        return None
+
+    # Locate any YYMMDD token in the filename/path
+    m = config.DATE_RE.search(abs_path)
+    if not m:
+        return None
+
+    yymmdd = m.group(1)
+
+    # Interpret YYMMDD → datetime
+    try:
+        # 20xx assumption
+        full_date = datetime.strptime("20" + yymmdd, "%Y%m%d")
+    except:
+        return None
+
+    return full_date
 
 
 def _score_with_extra_terms(rows, extra_terms):
@@ -1488,48 +1534,6 @@ def build_click_url_from_row(
 
 
 
-import json
-import re
-from datetime import datetime
-
-DATE_RE = re.compile(r"(\d{6})")  # matches yymmdd
-
-def get_doc_path_date(conn, document_id):
-    """
-    Load meta JSON from document table, extract absolute_path,
-    find a YYMMDD date in the path, return datetime object.
-    """
-    cur = conn.cursor()
-    cur.execute("SELECT meta FROM document WHERE document_id=?", (document_id,))
-    row = cur.fetchone()
-    if not row or not row[0]:
-        return None
-
-    try:
-        meta = json.loads(row[0])
-    except:
-        return None
-
-    abs_path = meta.get("absolute_path")
-    if not abs_path:
-        return None
-
-    # Locate any YYMMDD token in the filename/path
-    m = DATE_RE.search(abs_path)
-    if not m:
-        return None
-
-    yymmdd = m.group(1)
-
-    # Interpret YYMMDD → datetime
-    try:
-        # 20xx assumption
-        full_date = datetime.strptime("20" + yymmdd, "%Y%m%d")
-    except:
-        return None
-
-    return full_date
-
 
 def main(q, top_k, conn):
     print(f"ENTER overview q='{q}' top_k={top_k}")
@@ -1573,6 +1577,7 @@ def main(q, top_k, conn):
     # =========================================
     
     # add on the abs path from documents table meta 
+    pool = [dict(r) for r in pool]
     for r in pool:
         doc_id = r["document_id"]
         r["path_date"] = get_doc_path_date(conn, doc_id)
