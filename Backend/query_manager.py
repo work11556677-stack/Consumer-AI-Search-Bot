@@ -156,7 +156,7 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         "1. Classify the question as:\n"
         "   - use_case_1: company-specific, OR\n"
         "   - use_case_2: sector / macro.\n"
-        "   HARD RULE: If ANY company in coverage_universe is mentioned in the question, use_case_1.\n\n"
+        "   HARD RULE: If ANY company is mentioned in the question, use_case_1.\n\n"
         "2. For use_case_2 ONLY: identify which companies from coverage_universe are relevant to the "
         "   sector or category mentioned in the question. You MUST:\n"
         "   - Include ONLY companies whose *primary business* is in that sector.\n"
