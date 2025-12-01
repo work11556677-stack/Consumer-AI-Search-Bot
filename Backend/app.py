@@ -461,6 +461,8 @@ def overview(
     top_k: int = Query(5, ge=1, le=10)
 ):
     conn = database_manager.db(config.DB_PATH_MAIN)
+    # database_manager.print_gen_doc_ids(conn)
+
     top_k = 20
     try:
         result = query_manager.main(q, top_k, conn)
