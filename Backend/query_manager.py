@@ -1516,142 +1516,19 @@ def main(q, top_k, conn):
         print(f"query_manager:main:ERROR: use_case not valid! : debug classify_use_case output: {out}")
         return
     # =========================================
-    # STEP 1B: CASE 1 WORKFLOW 
+    # STEP 1B: Dispatch to case 1/2 workflow handlers
     # =========================================
-    if use_case == 'use_case_1':
 
-        # 1--> Attempt company extraction using pre-defined lists
-        #      (ASX_COMPANIES + ALIASES → cues → company_ids)
-        cues: List[str] = []
-        if tickers:
-            # We saw explicit tickers in the query: start from their aliases + legal names
-            cues.extend(_aliases_for_tickers(tickers))
-        else:
-            # No obvious ticker: scan query text for any known alias or legal name
-            flat = set()
-            for tk, arr in config.ALIASES.items():
-                flat.update(arr)
-            flat.update(config.ASX_COMPANIES.values())
-            flat.update(config.ASX_COMPANIES.keys())
-            ql = q.lower()
-            cues.extend([a for a in flat if a and a.lower() in ql])
+    if use_case == "use_case_1":
+        pool, tickers, extra_terms = handle_use_case_1(q, tokens, tickers, conn)
 
-        print(f"cues(len)={len(cues)} sample={cues[:10]}")
-
-        # Resolve company_ids via ref_company (DB layer)
-        company_ids = database_manager.resolve_company_ids(conn, cues)
-        print(f"company_ids={company_ids}")
-
-        # Fallback: if we saw explicit tickers but no match via cues, try tickers directly
-        if not company_ids and tickers:
-            company_ids = database_manager.resolve_company_ids(conn, tickers)
-            print(f"fallback company_ids via tickers={company_ids}")
-
-        # Pre-compute non-company terms for ranking (used later regardless of mode)
-        company_words = set(w.lower() for w in cues + tickers)
-        extra_terms = [t for t in tokens if t and t.lower() not in company_words]
-        print(f"extra_terms={extra_terms}")
-
-        # --> If no company found statically → use LLM to determine company
-        #          and build a dynamic doc pool at inference time.
-        #          If that also fails (no docs), we RETURN and do not continue.
-        if company_ids:
-            # ---- Static path: use precomputed company_term_count
-            pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=200)
-            print(f"pool_size={len(pool)} (static company_term_count path)")
-        else:
-            # ---- Dynamic path: let LLM pick a company, then scan docs
-            print("No company_ids from static extraction → entering dynamic LLM company path.")
-            pool = dynamic_company(q, conn, limit_pool=200)
-            print(f"pool_size={len(pool)} (dynamic LLM company path)")
-
-            # If dynamic path also fails → abort (no reports to summarise)
-            if not pool:
-                print("No reports found via static or dynamic company extraction → aborting.")
-                return  # early exit; caller will see None
-
-    # =========================================
-    # STEP 1C: CASE 2 WORKFLOW 
-    # =========================================
-    if use_case == 'use_case_2':
-        related_companies = out["related_companies"]
-        key_terms = out["key_terms"]
-
-        # ---- Convert related company names → tickers
-        tickers = [
-            ticker
-            for ticker, name in config.ASX_COMPANIES.items()
-            if name in related_companies
-        ]
-
-        print(f"[UNIFIED] tickers={tickers}, key_terms={key_terms}")
-
-        cues = []
-        if tickers:
-            # look up aliases from your existing alias map
-            cues.extend(_aliases_for_tickers(tickers))
-
-        # If no tickers, just use raw query tokens
-        # (we preserve the old structure where cues represent company_term filters)
-        else:
-            cues = []  # no company cues
+    if use_case == "use_case_2":
+        pool, tickers, extra_terms = handle_use_case_2(q, tokens, out, conn)
 
 
-        company_ids = []
-        if tickers:
-            company_ids = database_manager.resolve_company_ids(conn, tickers)
-            print(f"[UNIFIED] company_ids={company_ids}")
-
-
-        if company_ids:
-            # restrict to documents for those companies
-            pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=500)
-            print(f"[UNIFIED] pool_size={len(pool)} (filtered by company)")
-        else:
-            # full corpus
-            pool = database_manager.fetch_all_docs(conn, limit_pool=2000)
-            print(f"[UNIFIED] pool_size={len(pool)} (full corpus)")
-
-        if not pool:
-            print("[UNIFIED] empty pool → try dynamic fallback")
-            pool = dynamic_company(q, conn, limit_pool=500)
-
-        if not pool:
-            print("[UNIFIED] no docs found → abort")
-            return
-
-        company_words = set(w.lower() for w in cues + tickers)
-        extra_terms = [t for t in tokens if t and t.lower() not in company_words]
-
-        # merge with LLM key_terms (dedupe)
-        for kt in key_terms:
-            if kt not in extra_terms:
-                extra_terms.append(kt)
-
-        print(f"[UNIFIED] extra_terms={extra_terms}")
-
-        def term_score(text: str, terms: List[str]) -> int:
-            t = text.lower()
-            score = 0
-            for term in terms:
-                score += t.count(term.lower())
-            return score
-
-        if extra_terms:
-            scored_pool = []
-            for row in pool:
-                r = dict(row)
-                text = r.get("title", "") + " " + r.get("clean_text", "")
-                score = term_score(text, extra_terms)
-
-                # identical shape
-                r["extra_term_score"] = score
-                scored_pool.append(r)
-
-            # sort by score DESC
-            pool = sorted(scored_pool, key=lambda r: r["extra_term_score"], reverse=True)
-
-
+    if not pool:
+        print(f"query_manager:main:ERROR: No pool returned → abort : pool: {pool}, tickers: {tickers}, extra_terms: {extra_terms}")
+        return
 
 
 
