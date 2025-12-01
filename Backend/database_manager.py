@@ -120,11 +120,61 @@ def fetch_doc_pool(
             c.ticker_hits DESC
         LIMIT ?
     """
+    
+
 
     cur = conn.execute(sql, (*company_ids, limit_pool))
     rows = cur.fetchall()
     cur.close()
     return rows
+
+
+def fetch_all_docs(
+    conn: sqlite3.Connection,
+    limit_pool: int = 2000,
+) -> List[sqlite3.Row]:
+    """
+    Fetch ALL documents across ALL companies through company_term_count index.
+    Matches the shape of fetch_doc_pool() so downstream logic works identically.
+
+    Returns rows with:
+        document_id, title, published_at,
+        source_url, source_path,
+        company_id,
+        total_hits, name_hits, ticker_hits,
+        alias_hits (if exists)
+    """
+
+    have_alias = _col_exists(conn, "company_term_count", "alias_hits")
+    extra = ", c.alias_hits" if have_alias else ""
+
+    sql = f"""
+        SELECT 
+            d.document_id,
+            d.title,
+            d.published_at,
+            '' AS source_url,
+            '' AS source_path,
+            c.company_id,
+            c.total_hits,
+            c.name_hits,
+            c.ticker_hits
+            {extra}
+        FROM company_term_count c
+        JOIN document d ON d.document_id = c.document_id
+        ORDER BY 
+            c.total_hits DESC,
+            COALESCE(d.published_at, '') DESC,
+            c.name_hits DESC,
+            c.ticker_hits DESC
+        LIMIT ?
+    """
+
+    cur = conn.execute(sql, (limit_pool,))
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
 
 
 def fetch_doc_chunks_robust(
@@ -403,3 +453,24 @@ def get_context_chunks_for_sources(conn, sources_for_prompt):
                 )
 
     return context_blocks
+
+
+
+
+def print_gen_doc_ids(conn):
+    # Resolve the company_id for GEN
+    gen_ids = resolve_company_ids(conn, ["GEN"])
+
+    if not gen_ids:
+        print("No company_id found for GEN")
+        return
+
+    print(f"GEN company_ids={gen_ids}")
+
+    # Fetch documents
+    pool = fetch_doc_pool(conn, gen_ids, limit_pool=5000)
+    print(f"Found {len(pool)} GEN documents")
+
+    # Print all document IDs
+    doc_ids = [int(r["document_id"]) for r in pool]
+    print("GEN document_ids:", doc_ids)

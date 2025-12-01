@@ -135,24 +135,10 @@ def parse_sources_from_llm_output(llm_output: str):
 
 def classify_use_case(q: str) -> Dict[str, Any]:
     ql = q.lower()
-
-    # ======================
-    # CONFIG: YOUR COVERAGE LIST
-    # ======================
-    COVERED_COMPANIES = [
-        # INSERT YOUR FULL COVERAGE UNIVERSE HERE
-        "Woolworths", "Coles", "Metcash",
-        "JB Hi-Fi", "Harvey Norman",
-        "Premier Investments", "Universal Store", "Lovisa",
-        "Nick Scali", "Adairs", "Temple & Webster",
-        "Myer", "David Jones", "Big W", "Kmart",
-        # Add all others as needed
-    ]
-
     # ======================
     # BASIC HEURISTICS (unchanged)
     # ======================
-    company_hit = any(t.lower() in ql for t in COMPANY_TERMS)
+    company_hit = any(t.lower() in ql for t in config.COMPANY_TERMS)
     macro_hit = any(w in ql for w in [
         "forecast", "outlook", "drivers", "industry", "rate cut", "rate cuts",
         "savings rate", "online penetration", "australian dollar", "inflation",
@@ -167,34 +153,38 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         heuristic = None
 
     # ======================
-    # NEW SYSTEM PROMPT (LLM does everything)
+    # SYSTEM PROMPT
     # ======================
     system = (
-        "Classify a retail research question into exactly one label.\n\n"
-        "LABELS:\n"
-        "- use_case_1: company-level questions (question involves a specific company/brand/ticker;\n"
-        "  management issues, results, margins, market share, comparable sales, etc.)\n"
-        "- use_case_2: sector/macro questions (no single company focus; outlook, forecasts, pricing,\n"
-        "  industry-wide themes, inflation, online penetration, consumer demand, etc.)\n\n"
-        "ROUTING RULE (hard): If the query names ANY company/brand/ticker, the label must be use_case_1.\n\n"
-        "Additionally, you MUST produce:\n"
-        "- related_companies: a list (subset of coverage_universe) of the companies relevant to the\n"
-        "  question ONLY for use_case_2. If the question is too broad to narrow to a subset,\n"
-        "  return an empty list []. For use_case_1, always return [].\n"
-        "- key_terms: the key conceptual terms in the question (e.g., 'outlook', 'margins',\n"
-        "  'supermarkets', 'consumer demand', 'pricing pressure', etc.). Exclude stopwords.\n\n"
+        "You are a retail research classifier.\n\n"
+        "You are given a coverage_universe which is a list of company names. "
+        "Your tasks are:\n\n"
+        "1. Classify the question as:\n"
+        "   - use_case_1: company-specific, OR\n"
+        "   - use_case_2: sector / macro.\n"
+        "   HARD RULE: If ANY company in coverage_universe is mentioned in the question, use_case_1.\n\n"
+        "2. For use_case_2 ONLY: identify which companies from coverage_universe are relevant to the "
+        "   sector or category mentioned in the question. You MUST:\n"
+        "   - Include ONLY companies whose *primary business* is in that sector.\n"
+        "   - EXCLUDE companies with only secondary, marginal, historical, or incidental exposure.\n"
+        "   - If 'furniture' is mentioned, return only companies primarily in furniture retailing "
+        "     (e.g., Nick Scali, Adairs, Temple & Webster) and NOT companies like Super Retail Group.\n"
+        "   - If the sector is broad across all retail, return [].\n\n"
+        "3. Extract key_terms: the meaningful conceptual terms from the question.\n\n"
         "Return JSON only: {use_case, confidence, reason, related_companies, key_terms}."
     )
+
+
 
     # ======================
     # CALL LLM
     # ======================
     try:
-        r = client.chat.completions.create(
-            model=CLASSIFY_MODEL,
+        r = openai_manager.CLIENT.chat.completions.create(
+            model=config.CLASSIFY_MODEL,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": f"coverage_universe: {COVERED_COMPANIES}"},
+                {"role": "user", "content": f"coverage_universe: {config.ASX_COMPANIES.values()}"},
                 {"role": "user", "content": q},
                 {"role": "user", "content": f"Heuristic hint: {heuristic or 'unknown'}"}
             ],
@@ -205,7 +195,7 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         js = json.loads(r.choices[0].message.content)
 
         uc = js.get("use_case") or heuristic or "use_case_1"
-        conf = float(js.get("confidence") or 0.5)
+        conf = js.get("confidence") or 0.5
         reason = (js.get("reason") or "").strip()
 
         # ====================================================
@@ -222,7 +212,7 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         key_terms = js.get("key_terms", [])
 
     except Exception as e:
-        print(f"[classify] ERROR {e} -> fallback path used")
+        print(f"query_manager:classify_use_case:ERROR {e} -> fallback path used")
         uc = "use_case_1" if company_hit else (heuristic or "use_case_2" if macro_hit else "use_case_1")
         conf = 0.4
         reason = "fallback heuristic (LLM error)"
@@ -242,9 +232,149 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         "key_terms": key_terms,
     }
 
-    print(f"[classify] {CLASSIFY_MODEL} -> {out}")
+    print(f"query_manager:classify_use_case:DEBUG {config.CLASSIFY_MODEL} -> {out}")
     return out
 
+
+
+def handle_use_case_1(q, tokens, tickers, conn):
+    """
+    Runs the original use_case_1 workflow.
+    Returns: pool, tickers, extra_terms
+    """
+    cues: List[str] = []
+    ql = q.lower()
+
+    # 1. Use tickers → aliases
+    if tickers:
+        cues.extend(_aliases_for_tickers(tickers))
+    else:
+        # Scan aliases & legal names directly
+        flat = set()
+        for tk, arr in config.ALIASES.items():
+            flat.update(arr)
+        flat.update(config.ASX_COMPANIES.values())
+        flat.update(config.ASX_COMPANIES.keys())
+        cues.extend([a for a in flat if a and a.lower() in ql])
+
+    print(f"[UC1] cues(len)={len(cues)} sample={cues[:10]}")
+
+    # 2. Resolve company_ids
+    company_ids = database_manager.resolve_company_ids(conn, cues)
+    print(f"[UC1] company_ids={company_ids}")
+
+    # Fallback: direct ticker match
+    if not company_ids and tickers:
+        company_ids = database_manager.resolve_company_ids(conn, tickers)
+        print(f"[UC1] fallback company_ids via tickers={company_ids}")
+
+    # 3. Compute extra_terms (non-company words)
+    company_words = set(w.lower() for w in cues + tickers)
+    extra_terms = [t for t in tokens if t and t.lower() not in company_words]
+    print(f"[UC1] extra_terms={extra_terms}")
+
+    # 4. Build pool
+    if company_ids:
+        pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=200)
+        print(f"[UC1] pool_size={len(pool)} (static)")
+
+    else:
+        print("[UC1] No company match → dynamic path")
+        pool = dynamic_company(q, conn, limit_pool=200)
+        print(f"[UC1] pool_size={len(pool)} (dynamic)")
+
+        if not pool:
+            print("[UC1] No docs found → abort")
+            return None, None, None
+
+    return pool, tickers, extra_terms
+
+
+
+def handle_use_case_2(q, tokens, out, conn):
+    """
+    Hybrid workflow for sector/macro questions:
+    - related companies (tickers)
+    - key_terms
+    Always returns: pool, tickers, extra_terms
+    """
+
+    related_companies = out["related_companies"]
+    key_terms = out["key_terms"]
+
+    # 1. Convert related company names → tickers
+    tickers = [
+        ticker
+        for ticker, name in config.ASX_COMPANIES.items()
+        if name in related_companies
+    ]
+
+    print(f"[UC2] tickers={tickers}, key_terms={key_terms}")
+
+    # ------------------------------------------------------
+    # Build cues only from ticker aliases (not keywords)
+    # ------------------------------------------------------
+    cues = []
+    if tickers:
+        cues.extend(_aliases_for_tickers(tickers))
+
+    # ------------------------------------------------------
+    # Resolve company_ids (optional)
+    # ------------------------------------------------------
+    company_ids = []
+    if tickers:
+        company_ids = database_manager.resolve_company_ids(conn, tickers)
+        print(f"[UC2] company_ids={company_ids}")
+
+    # ------------------------------------------------------
+    # Build initial candidate pool
+    # ------------------------------------------------------
+    if company_ids:
+        pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=500)
+        print(f"[UC2] pool_size={len(pool)} (filtered by company)")
+    else:
+        pool = database_manager.fetch_all_docs(conn, limit_pool=2000)
+        print(f"[UC2] pool_size={len(pool)} (full corpus)")
+
+    if not pool:
+        print("[UC2] Empty pool → dynamic fallback")
+        pool = dynamic_company(q, conn, limit_pool=500)
+
+    if not pool:
+        print("[UC2] No docs found → abort")
+        return None, None, None
+
+    # ------------------------------------------------------
+    # Build extra_terms (tokens minus company words)
+    # then merge key_terms
+    # ------------------------------------------------------
+    company_words = set(w.lower() for w in cues + tickers)
+    extra_terms = [t for t in tokens if t and t.lower() not in company_words]
+
+    for kt in key_terms:
+        if kt not in extra_terms:
+            extra_terms.append(kt)
+
+    print(f"[UC2] extra_terms={extra_terms}")
+
+    # ------------------------------------------------------
+    # KEYWORD SCORING
+    # ------------------------------------------------------
+    if extra_terms:
+        def term_score(text, terms):
+            t = text.lower()
+            return sum(t.count(term.lower()) for term in terms)
+
+        scored = []
+        for row in pool:
+            r = dict(row)
+            text = r.get("title", "") + " " + r.get("clean_text", "")
+            r["extra_term_score"] = term_score(text, extra_terms)
+            scored.append(r)
+
+        pool = sorted(scored, key=lambda r: r["extra_term_score"], reverse=True)
+
+    return pool, tickers, extra_terms
 
 
 def _parse_query(q: str):
@@ -1137,7 +1267,7 @@ GENERAL RULES (CRITICAL):
 
 
 
-    print(f"Sources given to LLM: {sources_text}")
+    # print(f"Sources given to LLM: {sources_text}")
 
     system = base_persona + "\n\n" + rules + "\nCANDIDATES:\n" + candidates_block
     user = (
@@ -1358,9 +1488,47 @@ def build_click_url_from_row(
 
 
 
+import json
+import re
+from datetime import datetime
 
+DATE_RE = re.compile(r"(\d{6})")  # matches yymmdd
 
+def get_doc_path_date(conn, document_id):
+    """
+    Load meta JSON from document table, extract absolute_path,
+    find a YYMMDD date in the path, return datetime object.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT meta FROM document WHERE document_id=?", (document_id,))
+    row = cur.fetchone()
+    if not row or not row[0]:
+        return None
 
+    try:
+        meta = json.loads(row[0])
+    except:
+        return None
+
+    abs_path = meta.get("absolute_path")
+    if not abs_path:
+        return None
+
+    # Locate any YYMMDD token in the filename/path
+    m = DATE_RE.search(abs_path)
+    if not m:
+        return None
+
+    yymmdd = m.group(1)
+
+    # Interpret YYMMDD → datetime
+    try:
+        # 20xx assumption
+        full_date = datetime.strptime("20" + yymmdd, "%Y%m%d")
+    except:
+        return None
+
+    return full_date
 
 
 def main(q, top_k, conn):
@@ -1376,67 +1544,63 @@ def main(q, top_k, conn):
     print(f"tokens={tokens} tickers={tickers}")
 
     # =========================================
-    # STEP 1A: Attempt company extraction using pre-defined lists
-    #          (ASX_COMPANIES + ALIASES → cues → company_ids)
+    # STEP 1A: Check case 1/2
     # =========================================
-    cues: List[str] = []
-    if tickers:
-        # We saw explicit tickers in the query: start from their aliases + legal names
-        cues.extend(_aliases_for_tickers(tickers))
-    else:
-        # No obvious ticker: scan query text for any known alias or legal name
-        flat = set()
-        for tk, arr in config.ALIASES.items():
-            flat.update(arr)
-        flat.update(config.ASX_COMPANIES.values())
-        flat.update(config.ASX_COMPANIES.keys())
-        ql = q.lower()
-        cues.extend([a for a in flat if a and a.lower() in ql])
 
-    print(f"cues(len)={len(cues)} sample={cues[:10]}")
+    out = classify_use_case(q)
+    use_case = out['use_case']
 
-    # Resolve company_ids via ref_company (DB layer)
-    company_ids = database_manager.resolve_company_ids(conn, cues)
-    print(f"company_ids={company_ids}")
+    if use_case not in ['use_case_1', 'use_case_2']:
+        print(f"query_manager:main:ERROR: use_case not valid! : debug classify_use_case output: {out}")
+        return
 
-    
-
-
-    # Fallback: if we saw explicit tickers but no match via cues, try tickers directly
-    if not company_ids and tickers:
-        company_ids = database_manager.resolve_company_ids(conn, tickers)
-        print(f"fallback company_ids via tickers={company_ids}")
-
-    # Pre-compute non-company terms for ranking (used later regardless of mode)
-    company_words = set(w.lower() for w in cues + tickers)
-    extra_terms = [t for t in tokens if t and t.lower() not in company_words]
-    print(f"extra_terms={extra_terms}")
 
     # =========================================
-    # STEP 1B: If no company found statically → use LLM to determine company
-    #          and build a dynamic doc pool at inference time.
-    #          If that also fails (no docs), we RETURN and do not continue.
+    # STEP 1B: Dispatch to case 1/2 workflow handlers
     # =========================================
-    if company_ids:
-        # ---- Static path: use precomputed company_term_count
-        pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=200)
-        print(f"pool_size={len(pool)} (static company_term_count path)")
-    else:
-        # ---- Dynamic path: let LLM pick a company, then scan docs
-        print("No company_ids from static extraction → entering dynamic LLM company path.")
-        pool = dynamic_company(q, conn, limit_pool=200)
-        print(f"pool_size={len(pool)} (dynamic LLM company path)")
+    if use_case == "use_case_1":
+        pool, tickers, extra_terms = handle_use_case_1(q, tokens, tickers, conn)
+    if use_case == "use_case_2":
+        pool, tickers, extra_terms = handle_use_case_2(q, tokens, out, conn)
+    if not pool:
+        print(f"query_manager:main:ERROR: No pool returned → abort : pool: {pool}, tickers: {tickers}, extra_terms: {extra_terms}")
+        return
 
-        # If dynamic path also fails → abort (no reports to summarise)
-        if not pool:
-            print("No reports found via static or dynamic company extraction → aborting.")
-            return  # early exit; caller will see None
+
 
     # =========================================
     # STEP 2: Fetch and rank docs that relate to the chosen company
     # =========================================
-    ranked = _score_with_extra_terms(pool, extra_terms) if extra_terms else pool
-    print(f"ranked_pool_size={len(ranked)}")
+    
+    # add on the abs path from documents table meta 
+    for r in pool:
+        doc_id = r["document_id"]
+        r["path_date"] = get_doc_path_date(conn, doc_id)
+    from datetime import datetime
+    # Deduplicate by document_id (keep first occurrence)
+    seen = set()
+    deduped_pool = []
+    for r in pool:
+        doc_id = r["document_id"]
+        if doc_id not in seen:
+            seen.add(doc_id)
+            deduped_pool.append(r)
+
+    pool = deduped_pool
+    print(f"[UC2] pool_size (deduped)={len(pool)}")
+    ranked = pool
+
+    if use_case == "use_case_2" and not tickers:
+        print("[RANK] use_case_2 + no tickers → sorting by lowest total_hits then path_date DESC")
+
+        ranked = sorted(
+            pool,
+            key=lambda r: (
+                int(r.get("total_hits") or 0),
+                -(r["path_date"].timestamp() if r.get("path_date") else 0)   # SAFE
+            )
+        )
+
 
     picked = ranked[:top_k]
     picked_sorted = sorted(picked, key=pubdate, reverse=True)
