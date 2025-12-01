@@ -825,7 +825,7 @@ def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list
     Tries multiple table/column layouts seen in your DBs.
     """
     candidates = [
-        # (table,         text_col,        page_col,         idx_col)
+       # (table,           text_col,        page_col,         idx_col)
         ("chunk",         "text",          "page_start",     "chunk_index"),
         ("chunk",         "chunk_text",    "page_start",     "chunk_index"),
         ("chunk",         "content",       "page_no",        "chunk_id"),
@@ -873,20 +873,20 @@ def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list
 
 def _build_context_blocks(conn: sqlite3.Connection, picked_docs: list[dict]):
     """
-    Build context_blocks + sources_for_prompt with LOUD debug.
+    Build context_blocks + sources_for_prompt with lots of debug.
     Uses _fetch_doc_chunks_robust so we actually get content, regardless of schema drift.
     """
     context_blocks: list[str] = []
     sources_for_prompt: list[dict] = []
 
-    print(f"_build_context_blocks: picked_docs={len(picked_docs)}")
+    print(f"query_manager:_build_context_blocks:DEBUG:: picked_docs={len(picked_docs)}")
 
     for i, r in enumerate(picked_docs, start=1):
         did = int(r["document_id"])
         title = (r.get("title") or f"Document {did}").strip()
 
         chunks = _fetch_doc_chunks_robust(conn, did)
-        print(f"  [S{i}] doc_id={did} title='{title[:80]}' chunks={len(chunks)}")
+        print(f"  query_manager:_build_context_blocks:DEBUG: [S{i}] doc_id={did} title='{title[:80]}' chunks={len(chunks)}")
 
         if not chunks:
             context_blocks.append("")
@@ -911,11 +911,11 @@ def _build_context_blocks(conn: sqlite3.Connection, picked_docs: list[dict]):
         pages_seen = pages_seen[:100] or [1]
         sources_for_prompt.append({"title": title, "document_id": did, "pages": pages_seen})
 
-        print(f"  [S{i}] pages_seen={pages_seen[:12]} block_len={len(block)}")
+        print(f"  query_manager:_build_context_blocks:DEBUG:[S{i}] pages_seen={pages_seen[:12]} block_len={len(block)}")
 
     # Quick summary for the whole set
     nonempty = sum(1 for b in context_blocks if b.strip())
-    print(f"_build_context_blocks: nonempty_blocks={nonempty}/{len(context_blocks)}")
+    print(f"query_manager:_build_context_blocks:DEBUG:: nonempty_blocks={nonempty}/{len(context_blocks)}")
     return context_blocks, sources_for_prompt
 
 
@@ -1137,183 +1137,75 @@ def llm_summarize_persona(
         "Priorities: newest first; sector-level quantified bullets. No investment advice."
     )
 
-    # >>> STRICT output rules (UPDATED 20251028) <<<
-    # rules = f"""OUTPUT SPEC:
-    #   1) Write up to three concise bullets.
-    #   2) END EACH BULLET with one or more inline citation markers in the exact form:
-    #      [S# pPAGE "SHORT QUOTE"]   e.g., [S1 p7 "traffic rose 3% y/y"]
-    #      - S# must refer to the source index from CANDIDATES below.
-    #      - QUOTE: 6–12 words copied verbatim from that page/section.
-    #      - Put a marker immediately after any numeric/specific claim.
-    #   3) After the bullets, output a line exactly: CITATIONS(JSON)
-    #      Then on the next line: a JSON array of objects:
-    #      {{"bullet": <1-based>, "S": <int>, "page": <int>, "quote": "..."}}
-    #   4) Add a 'Sources' section listing exactly the sources you used:
-    #      - <Title> — p.N[, p.M ...]
-    #   5) CONTENT-FIRST: Your job is to surface the most relevant content snippets verbatim (with citations),
-    #      not to speculate or infer beyond the provided text.
 
-         
-    #     Once you choose your best sources, you must not draw any infomration from any other sources. Only your selected ones. 
-    #     All bits of information, especially numbers, and key statements MUST be correctly referenced from the given source. Do not reference incorrect sources.
-    #     YOU MUST exactly quote the sources!! there is no paraphrasing in the when listing references. 
-    
-    #   CHOOSING SOURCES:
-    #   - Pick up to 4 sources; prefer the newest two as S1 and S2.
-    #   - Do NOT feel obligated to use all candidates—relevance beats quantity.
-    # """ 
-#     rules = f"""
-# STRICT MODE — READ CAREFULLY. NO EXTERNAL KNOWLEDGE ALLOWED.
-
-# You are given several context snippets. 
-# These are the ONLY pieces of information you are allowed to use. 
-# If the information needed to answer is NOT explicitly found in the provided context, 
-# you MUST reply with fewer bullets or say that the context does not provide enough information.
-
-# ABSOLUTE RULES:
-# 1. You MUST NOT use any knowledge, fact, statistic, meaning, context, or assumption that does not
-#    appear directly in the provided snippets.
-# 2. You MUST NOT paraphrase. Every specific factual claim MUST be followed by a citation marker with a
-#    verbatim quote from the context.
-# 3. You MUST NOT guess, infer, interpolate, or generalise beyond EXACT wording found in the context.
-# 4. If the context does not contain enough reliable information to generate a given bullet, you must skip it.
-
-# ===========================================================
-# OUTPUT FORMAT (MUST FOLLOW EXACTLY)
-# ===========================================================
-
-# You must output THREE SECTIONS in this exact order:
-
-# ---------------------------
-# (1) BULLETS
-# ---------------------------
-# - Maximum of 3 bullets.
-# - Each bullet MUST start with "- " (dash + space).
-# - A bullet may contain multiple citations.
-# - A citation marker MUST appear immediately after the statement it supports:
-#       [S# pPAGE "EXACT QUOTE OF 6–14 WORDS"]
-# - QUOTES MUST match EXACTLY (verbatim) the text inside the corresponding context snippet.
-# - If you cannot find an appropriate verbatim quote for a claim, DO NOT MAKE THAT CLAIM.
-
-# If the context contains almost no usable content:
-#     - You may output 0 or 1 bullets.
-#     - Example allowed bullet:
-#         - The provided context does not contain enough information to answer this question.
-
-# ---------------------------
-# (2) CITATIONS(JSON)
-# ---------------------------
-# After the bullets, output EXACTLY this line:
-# CITATIONS(JSON)
-
-# On the line after that, output a JSON array containing one object for every citation marker used in (1).
-
-# Each object MUST contain:
-# - "bullet": the 1-based bullet index (1, 2, or 3)
-# - "S": the source index number (1-based)
-# - "page": the page number from the citation
-# - "quote": EXACT SAME TEXT that appears inside the [S# pPAGE "QUOTE"] marker.
-
-# NO TRAILING COMMAS.
-# NO COMMENTS.
-
-# ---------------------------
-# (3) Sources
-# ---------------------------
-# Then output a section:
-
-# Sources
-
-# Then one line per SOURCE YOU ACTUALLY CITED:
-# - <TITLE FROM CANDIDATES> — p.<list of pages> — "<ONE QUOTE USED FROM THIS SOURCE>"
-
-# Rules:
-# - Only list sources you actually used in (1).
-# - Titles must match EXACTLY the titles listed in CANDIDATES.
-# - Page list must be sorted ascending.
-# - The representative quote MUST be an EXACT quote you used in that source.
-
-# ===========================================================
-# FAIL-SAFE RULES
-# ===========================================================
-# If the model cannot find ANY verbatim quotes for ANY claim → then output:
-# - The context does not contain enough information to answer this query.
-
-# This is acceptable and correct behaviour.
-
-# ===========================================================
-# END OF CONTRACT.
-# """
 
     rules = f"""OUTPUT SPEC (STRICT — FOLLOW EXACTLY):
 
-1) BULLETS
-   - Write up to three concise bullets.
-   - Each bullet must start with "- " (dash + space).
-   - EVERY factual statement (numbers, percentages, dates, “up/down”, specific claims)
-     MUST end with one or more citation markers.
-   - Citation marker format (STRICT):
-       [S# pPAGE "SHORT QUOTE"]
-       Examples:
-         [S1 p7 "traffic rose 3% year-on-year in FY25"]
-         [S2 p3 "growth in comparable store sales during H1"]
+    1) BULLETS
+    - Write up to three concise bullets.
+    - Each bullet must start with "- " (dash + space).
+    - EVERY factual statement (numbers, percentages, dates, “up/down”, specific claims)
+        MUST end with one or more citation markers.
+    - Citation marker format (STRICT):
+        [S# pPAGE "SHORT QUOTE"]
+        Examples:
+            [S1 p7 "traffic rose 3% year-on-year in FY25"]
+            [S2 p3 "growth in comparable store sales during H1"]
 
-   RULES FOR CITATION MARKERS:
-     - S# is the source index shown in CANDIDATES (1-based).
-     - PAGE is the page number from the [S# pN] prefix in the context.
-     - SHORT QUOTE:
-         * EXACT, verbatim text copied from the underlying context for that S and page.
-         * Must be 6–12 consecutive words.
-         * No paraphrasing, no substitutions, no reordering.
-     - Place the marker IMMEDIATELY after the sentence or clause it supports.
-     - A bullet may contain multiple markers if using multiple claims.
+    RULES FOR CITATION MARKERS:
+        - S# is the source index shown in CANDIDATES (1-based).
+        - PAGE is the page number from the [S# pN] prefix in the context.
+        - SHORT QUOTE:
+            * EXACT, verbatim text copied from the underlying context for that S and page.
+            * Must be 6–12 consecutive words.
+            * No paraphrasing, no substitutions, no reordering.
+        - Place the marker IMMEDIATELY after the sentence or clause it supports.
+        - A bullet may contain multiple markers if using multiple claims.
 
-2) CITATIONS(JSON)
-   After the bullets, output EXACTLY this line:
-     CITATIONS(JSON)
-   On the next line output ONLY a valid JSON array, e.g.:
-     [
-       {{ "bullet": 1, "S": 1, "page": 7, "quote": "traffic rose 3% year-on-year in FY25" }},
-       {{ "bullet": 1, "S": 2, "page": 3, "quote": "growth in comparable store sales during H1" }}
-     ]
+    2) CITATIONS(JSON)
+    After the bullets, output EXACTLY this line:
+        CITATIONS(JSON)
+    On the next line output ONLY a valid JSON array, e.g.:
+        [
+        {{ "bullet": 1, "S": 1, "page": 7, "quote": "traffic rose 3% year-on-year in FY25" }},
+        {{ "bullet": 1, "S": 2, "page": 3, "quote": "growth in comparable store sales during H1" }}
+        ]
 
-   JSON RULES:
-     - One object per citation marker used in the bullets.
-     - "bullet" is 1-based bullet index.
-     - "S" matches the S# from the marker.
-     - "page" is the same page number as in the marker.
-     - "quote" exactly matches the SHORT QUOTE used inside that marker.
-     - JSON must be valid: no comments, no trailing commas.
+    JSON RULES:
+        - One object per citation marker used in the bullets.
+        - "bullet" is 1-based bullet index.
+        - "S" matches the S# from the marker.
+        - "page" is the same page number as in the marker.
+        - "quote" exactly matches the SHORT QUOTE used inside that marker.
+        - JSON must be valid: no comments, no trailing commas.
 
-3) Sources
-   After the JSON array, output a “Sources” section:
-     Sources
-     - <Exact title from CANDIDATES> — p.N[, p.M ...] — "ONE REPRESENTATIVE QUOTE"
+    3) Sources
+    After the JSON array, output a “Sources” section:
+        Sources
+        - <Exact title from CANDIDATES> — p.N[, p.M ...] — "ONE REPRESENTATIVE QUOTE"
 
-   RULES:
-     - The first line must be exactly: Sources
-     - Then one bullet line per DISTINCT cited source.
-     - Titles MUST match exactly what appears in CANDIDATES.
-     - List ALL cited pages for that source, sorted ascending (e.g. "p.3, p.4, p.9").
-     - The trailing quoted text must be ONE of the SHORT QUOTEs you used for that source.
-     - All text must be copied exactly from context—no paraphrasing.
+    RULES:
+        - The first line must be exactly: Sources
+        - Then one bullet line per DISTINCT cited source.
+        - Titles MUST match exactly what appears in CANDIDATES.
+        - List ALL cited pages for that source, sorted ascending (e.g. "p.3, p.4, p.9").
+        - The trailing quoted text must be ONE of the SHORT QUOTEs you used for that source.
+        - All text must be copied exactly from context—no paraphrasing.
 
-GENERAL RULES (CRITICAL):
-   - The most important Criteria for choosing sources is THE MOST RECENT, RELEVANT SOURCE.
-   - YOU MUST, for every single dotpoint have the date of the given report Listed in month-yyyy (Jan-2025) at the start of the dotpoint. 
-   - When answering with metrics, you MUST NOT quote multiple of the same/ similar metrics from multiple reports. You must only choose the most upto date metric, and quote in brackets the date when it was given. 
-   - You MUST NOT use ANY information not found in the provided context.
-   - If the context does not include sufficient information, write fewer bullets or none.
-   - Every factual assertion must be grounded in a verbatim quote.
-   - If you cannot find a valid 6–12 word quote, you may NOT make the claim.
-   - You may skip bullets entirely if the source text is too thin.
-   - Precision over breadth: fewer correct bullets > more speculative content.
-"""
-
-
+    GENERAL RULES (CRITICAL):
+    - The most important Criteria for choosing sources is THE MOST RECENT, RELEVANT SOURCE.
+    - YOU MUST, for every single dotpoint have the date of the given report Listed in month-yyyy (Jan-2025) at the start of the dotpoint. 
+    - When answering with metrics, you MUST NOT quote multiple of the same/ similar metrics from multiple reports. You must only choose the most upto date metric, and quote in brackets the date when it was given. 
+    - You MUST NOT use ANY information not found in the provided context.
+    - If the context does not include sufficient information, write fewer bullets or none.
+    - Every factual assertion must be grounded in a verbatim quote.
+    - If you cannot find a valid 6–12 word quote, you may NOT make the claim.
+    - You may skip bullets entirely if the source text is too thin.
+    - Precision over breadth: fewer correct bullets > more speculative content.
+    """
 
 
-    # print(f"Sources given to LLM: {sources_text}")
+
 
     system = base_persona + "\n\n" + rules + "\nCANDIDATES:\n" + candidates_block
     user = (
@@ -1330,8 +1222,7 @@ GENERAL RULES (CRITICAL):
         temperature=0.2,
     )
     out = (r.choices[0].message.content or "").strip()
-    print(f"---------------------------LLM Response---------------------------")
-    print(out)
+    print(f"query_manager:llm_summarize_persona:DEBUG: llm_response: {out}")
 
     # ---- Split out bullets / CITATIONS(JSON) / Sources ----
     lines = out.splitlines()
@@ -1536,16 +1427,19 @@ def build_click_url_from_row(
 
 
 def main(q, top_k, conn):
-    print(f"ENTER overview q='{q}' top_k={top_k}")
+    print(f"query_manager:main:FLOW: entered overview with q='{q}' top_k={top_k}")
     top_k = 10
 
 
     # =========================================
     # STEP 0: Basic query processing
     # =========================================
+    
     tokens = _parse_query(q)
     tickers = _guess_tickers(tokens)
-    print(f"tokens={tokens} tickers={tickers}")
+    print(f"query_manager:main:DEBUG: tokens={tokens} tickers={tickers}")
+
+    print(f"query_manager:main:FLOW: finish step 0")
 
     # =========================================
     # STEP 1A: Check case 1/2
@@ -1571,7 +1465,7 @@ def main(q, top_k, conn):
         return
 
 
-
+    print(f"query_manager:main:FLOW: finish step 1")
     # =========================================
     # STEP 2: Fetch and rank docs that relate to the chosen company
     # =========================================
@@ -1592,11 +1486,11 @@ def main(q, top_k, conn):
             deduped_pool.append(r)
 
     pool = deduped_pool
-    print(f"[UC2] pool_size (deduped)={len(pool)}")
+    print(f"query_manager:main:DEBUG: [UC2] pool_size (deduped)={len(pool)}")
     ranked = pool
 
     if use_case == "use_case_2" and not tickers:
-        print("[RANK] use_case_2 + no tickers → sorting by lowest total_hits then path_date DESC")
+        print("query_manager:main:DEBUG: [RANK] use_case_2 + no tickers → sorting by lowest total_hits then path_date DESC")
 
         ranked = sorted(
             pool,
@@ -1610,7 +1504,7 @@ def main(q, top_k, conn):
     picked = ranked[:top_k]
     picked_sorted = sorted(picked, key=pubdate, reverse=True)
     print(
-        f"picked_docs={len(picked)} "
+        f"query_manager:main:DEBUG: picked_docs={len(picked)} "
         f"ids={[int(r['document_id']) for r in picked]}"
     )
 
@@ -1641,20 +1535,22 @@ def main(q, top_k, conn):
             ref["alias_hits"] = 0
         refs.append(ref)
 
-    print(f"refs_built={len(refs)}")
+    print(f"query_manager:main:DEBUG: refs_built={len(refs)}")
 
+
+    print(f"query_manager:main:FLOW: finish step 2")
     # =========================================
     # STEP 3: Build context blocks & run LLM persona summary
     # =========================================
     context_blocks, sources_for_prompt = _build_context_blocks(conn, refs)
     print(
-        "context_blocks_nonempty="
+        "query_manager:main:DEBUG: context_blocks_nonempty="
         f"{sum(1 for b in context_blocks if b.strip())} / {len(context_blocks)}"
     )
 
     # Safety: if for some reason chunks are totally empty, just bail
     if not any(b.strip() for b in context_blocks):
-        print("No non-empty context blocks after chunk fetch → aborting.")
+        print("query_manager:main:ERROR: No non-empty context blocks after chunk fetch → aborting.")
         return
 
     llm_out = llm_summarize_persona(
@@ -1665,11 +1561,7 @@ def main(q, top_k, conn):
         sources_for_prompt=sources_for_prompt,
     )
 
-    print(
-        "LLM summary_html_len="
-        f"{len(llm_out.get('summary_html',''))} "
-        f"refs_in_llm={len(llm_out.get('references', []))}"
-    )
+
 
     # Link refs chosen by the model (now prefer highlighted pdfjs URL)
     llm_refs = llm_out.get("references", [])
@@ -1707,6 +1599,7 @@ def main(q, top_k, conn):
                 }
             )
 
+    print(f"query_manager:main:FLOW: finish step 3, creating final payload to return . . . ")
     # Final payload
     summary_md = llm_out["summary_md"]
     citations = llm_out["citations"]
