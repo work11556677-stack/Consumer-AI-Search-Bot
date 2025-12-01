@@ -1,7 +1,12 @@
-from typing import Dict, List, Tuple, Optional, Sequence
 import re
+from typing import Dict, List, Tuple, Optional, Sequence
 
+# IMPORTANT PATHS
+DOCX_RETAIL_PATH = r"C:\Users\HarryKember\Desktop\V6\Docx Retail"
+CHART_PACKS_PATH = r"C:\Users\HarryKember\Desktop\V6\Chart_Packs"
+DB_PATH_MAIN = r"C:\Users\HarryKember\Desktop\V6\Backend\pdfint.db"
 
+# known companies 
 ASX_COMPANIES: Dict[str, str] = {
     "ADH": "Adairs Limited",
     "ALD": "Ampol Limited",
@@ -26,7 +31,6 @@ ASX_COMPANIES: Dict[str, str] = {
     "WES": "Wesfarmers Limited",
     "WOW": "Woolworths Group Limited",
 }
-
 ALIASES: Dict[str, List[str]] = {
     "ALD": ["Ampol"],
     "ADH": ["Adairs"],
@@ -51,7 +55,6 @@ ALIASES: Dict[str, List[str]] = {
     "WES": ["Wesfarmers", "Wes"],
     "WOW": ["Woolworths", "Woolies", "Woolworths Group"],
 }
-
 COMPANY_TERMS = {
     "woolworths", "wow", "asx:wow",
     "coles", "col", "asx:col",
@@ -66,19 +69,18 @@ COMPANY_TERMS = {
     "aldi", "kmart", "target", "officeworks", "big w", "dan murphy", "liquorland",
 }
 
-
+# debug output: q/a logging
 OUTPUT_FILE = "question_answer_output.txt"
 
-DOCX_RETAIL_PATH = r"C:\Users\HarryKember\Desktop\V6\Docx Retail"
-CHART_PACKS_PATH = r"C:\Users\HarryKember\Desktop\V6\Chart_Packs"
-DB_PATH_MAIN = r"C:\Users\HarryKember\Desktop\V6\Backend\pdfint.db"
 
 
+
+
+# non essentials stuff
 ORDER_DEFAULT = "newest"
 
 YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 TICKER_RE = re.compile(r"\b[A-Z]{3,4}\b")
-
 
 LLM_MODEL   = "gpt-4o"
 CLASSIFY_MODEL = "gpt-4o-mini"
@@ -89,7 +91,9 @@ REWRITE_ON     = True
 REWRITE_HYDE   = True
 REWRITE_PPAR   = 3
 
-
-OVERVIEW_TOP_K = 16
+OVERVIEW_TOP_K = 16 # unused 
 
 _CIT_MARK = re.compile(r'\[S(?P<S>\d+)\s+p(?P<page>\d+)\s+"(?P<quote>[^"]+)"\]')
+DATE_RE = re.compile(r"(\d{6})")  # matches yymmdd
+
+WORD_BOUNDARY = r"(?<![A-Za-z0-9]){term}(?![A-Za-z0-9])"

@@ -1,45 +1,3 @@
-# from __future__ import annotations
-
-# import query_manager
-# import database_manager
-# import config
-
-# from contextlib import asynccontextmanager
-# import html
-
-# from fastapi import FastAPI, HTTPException, Query
-# from fastapi.middleware.cors import CORSMiddleware
-# from fastapi.responses import JSONResponse, HTMLResponse
-# from fastapi.staticfiles import StaticFiles
-
-
-
-
-
-
-
-
-# @app.get("/overview")
-# def overview(
-#     q: str = Query(...),
-#     confirm: bool = Query(False),
-#     top_k: int = Query(5, ge=1, le=10)
-# ):
-#     conn = database_manager.db(config.DB_PATH_MAIN)
-#     result = query_manager.main(q, top_k, conn)
-
-
-
-#     conn.close()
-
-#     return result
-
-
-
-
-
-
-
 from __future__ import annotations
 
 import html
@@ -57,7 +15,6 @@ import config
 # -------------------------------------------------
 # APP SETUP
 # -------------------------------------------------
-
 app = FastAPI(title="pdfint Overview Search")
 
 # CORS (relaxed so you can hit it from anywhere / JS)
@@ -80,7 +37,6 @@ except RuntimeError:
 # -------------------------------------------------
 # SIMPLE HTML FRONTEND
 # -------------------------------------------------
-
 HTML_INDEX = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -453,7 +409,6 @@ def index() -> str:
 # -------------------------------------------------
 # /overview JSON API
 # -------------------------------------------------
-
 @app.get("/overview")
 def overview(
     q: str = Query(...),
@@ -461,6 +416,8 @@ def overview(
     top_k: int = Query(5, ge=1, le=10)
 ):
     conn = database_manager.db(config.DB_PATH_MAIN)
+    # database_manager.print_gen_doc_ids(conn)
+
     top_k = 20
     try:
         result = query_manager.main(q, top_k, conn)
@@ -472,11 +429,12 @@ def overview(
 # -------------------------------------------------
 # LOCAL DEV ENTRYPOINT
 # -------------------------------------------------
-
 if __name__ == "__main__":
-    import uvicorn
+  import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+  uvicorn.run(app, host="127.0.0.1", port=8000)
+  # uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 

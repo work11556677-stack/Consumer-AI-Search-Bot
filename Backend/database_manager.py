@@ -1,7 +1,7 @@
-import sqlite3
-from typing import Dict, List, Tuple, Optional, Sequence, Any
-import json 
 import re 
+import json
+import sqlite3 
+from typing import Dict, List, Tuple, Optional, Sequence, Any
 
 
 
@@ -12,7 +12,6 @@ def db(db_path_main) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
-
 def rows_to_dicts(rows: List[sqlite3.Row]) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
@@ -21,8 +20,6 @@ def fetchone(conn, sql, params=(), schema_hint: Optional[str]=None):
 
 def fetchall(conn, sql, params=(), schema_hint: Optional[str]=None):
     return conn.execute(sql, params).fetchall()
-
-
 
 def _table_names(conn: sqlite3.Connection, schema: str = "main") -> set:
     return {r[0] for r in conn.execute(f"SELECT name FROM {schema}.sqlite_master WHERE type='table';").fetchall()}
@@ -42,8 +39,6 @@ def _json_safe_parse(s: Optional[str]) -> Dict[str, Any]:
     try: return json.loads(s)
     except Exception: return {}
 
-
-WORD_BOUNDARY = r"(?<![A-Za-z0-9]){term}(?![A-Za-z0-9])"
 def safe_regex_count(pattern: Optional[str], text: str) -> int:
     """Safe case-insensitive regex count with guard against bad patterns."""
     if not pattern or not text:
@@ -53,9 +48,6 @@ def safe_regex_count(pattern: Optional[str], text: str) -> int:
     except re.error:
         return 0
     
-
-
-
 def resolve_company_ids(
     conn: sqlite3.Connection,
     cues: List[str],
@@ -79,7 +71,6 @@ def resolve_company_ids(
     rows = [int(r["company_id"]) for r in cur.fetchall()]
     cur.close()
     return rows
-
 
 def fetch_doc_pool(
     conn: sqlite3.Connection,
@@ -128,7 +119,6 @@ def fetch_doc_pool(
     cur.close()
     return rows
 
-
 def fetch_all_docs(
     conn: sqlite3.Connection,
     limit_pool: int = 2000,
@@ -174,8 +164,6 @@ def fetch_all_docs(
     rows = cur.fetchall()
     cur.close()
     return rows
-
-
 
 def fetch_doc_chunks_robust(
     conn: sqlite3.Connection,
@@ -238,7 +226,6 @@ def fetch_doc_chunks_robust(
     print("fetch_doc_chunks_robust: no layouts matched; returning []")
     return []
 
-
 def get_company_id_for_ticker(
     conn: sqlite3.Connection,
     ticker: str,
@@ -252,7 +239,6 @@ def get_company_id_for_ticker(
     if not row:
         return None
     return int(row[0])
-
 
 def dynamic_company_pool(
     conn: sqlite3.Connection,
@@ -299,18 +285,18 @@ def dynamic_company_pool(
 
     # patterns
     name_pat = (
-        WORD_BOUNDARY.format(term=re.escape(legal_name.lower()))
+        config.WORD_BOUNDARY.format(term=re.escape(legal_name.lower()))
         if legal_name
         else None
     )
-    ticker_pat = WORD_BOUNDARY.format(term=re.escape(ticker.lower()))
+    ticker_pat = config.WORD_BOUNDARY.format(term=re.escape(ticker.lower()))
 
     alias_pats: List[str] = []
     for al in aliases:
         al = al.strip()
         if not al:
             continue
-        alias_pats.append(WORD_BOUNDARY.format(term=re.escape(al.lower())))
+        alias_pats.append(config.WORD_BOUNDARY.format(term=re.escape(al.lower())))
 
     hit_rows: List[Dict[str, Any]] = []
 
@@ -413,10 +399,6 @@ def dynamic_company_pool(
     print(f"dynamic_company_pool: built dynamic pool size={len(pool)}")
     return pool
 
-
-
-
-
 def get_context_chunks_for_sources(conn, sources_for_prompt):
     """
     Expand the compact source descriptors into FULL TEXT CONTEXT:
@@ -453,9 +435,6 @@ def get_context_chunks_for_sources(conn, sources_for_prompt):
                 )
 
     return context_blocks
-
-
-
 
 def print_gen_doc_ids(conn):
     # Resolve the company_id for GEN
