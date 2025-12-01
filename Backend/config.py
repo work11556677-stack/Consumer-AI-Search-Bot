@@ -69,9 +69,9 @@ COMPANY_TERMS = {
 
 OUTPUT_FILE = "question_answer_output.txt"
 
-DOCX_RETAIL_PATH = r"C:/Users/HarryKember/OneDrive - MST Financial/Desktop/20251029 AI Reports v4/V5\Docx Retail"
-CHART_PACKS_PATH = r"C:/Users/HarryKember/OneDrive - MST Financial/Desktop/20251029 AI Reports v4/V5\Chart_Packs"
-DB_PATH_MAIN = r"C:\Users\HarryKember\OneDrive - MST Financial\Desktop\20251029 AI Reports\V6\Backend\pdfint.db"
+DOCX_RETAIL_PATH = r"C:\Users\HarryKember\Desktop\V6\Docx Retail"
+CHART_PACKS_PATH = r"C:\Users\HarryKember\Desktop\V6\Chart_Packs"
+DB_PATH_MAIN = r"C:\Users\HarryKember\Desktop\V6\Backend\pdfint.db"
 
 
 ORDER_DEFAULT = "newest"

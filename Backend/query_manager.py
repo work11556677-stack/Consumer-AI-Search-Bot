@@ -1488,9 +1488,47 @@ def build_click_url_from_row(
 
 
 
+import json
+import re
+from datetime import datetime
 
+DATE_RE = re.compile(r"(\d{6})")  # matches yymmdd
 
+def get_doc_path_date(conn, document_id):
+    """
+    Load meta JSON from document table, extract absolute_path,
+    find a YYMMDD date in the path, return datetime object.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT meta FROM document WHERE document_id=?", (document_id,))
+    row = cur.fetchone()
+    if not row or not row[0]:
+        return None
 
+    try:
+        meta = json.loads(row[0])
+    except:
+        return None
+
+    abs_path = meta.get("absolute_path")
+    if not abs_path:
+        return None
+
+    # Locate any YYMMDD token in the filename/path
+    m = DATE_RE.search(abs_path)
+    if not m:
+        return None
+
+    yymmdd = m.group(1)
+
+    # Interpret YYMMDD → datetime
+    try:
+        # 20xx assumption
+        full_date = datetime.strptime("20" + yymmdd, "%Y%m%d")
+    except:
+        return None
+
+    return full_date
 
 
 def main(q, top_k, conn):
@@ -1515,30 +1553,54 @@ def main(q, top_k, conn):
     if use_case not in ['use_case_1', 'use_case_2']:
         print(f"query_manager:main:ERROR: use_case not valid! : debug classify_use_case output: {out}")
         return
+
+
     # =========================================
     # STEP 1B: Dispatch to case 1/2 workflow handlers
     # =========================================
-
     if use_case == "use_case_1":
         pool, tickers, extra_terms = handle_use_case_1(q, tokens, tickers, conn)
-
     if use_case == "use_case_2":
         pool, tickers, extra_terms = handle_use_case_2(q, tokens, out, conn)
-
-
     if not pool:
         print(f"query_manager:main:ERROR: No pool returned → abort : pool: {pool}, tickers: {tickers}, extra_terms: {extra_terms}")
         return
 
 
 
-
-
     # =========================================
     # STEP 2: Fetch and rank docs that relate to the chosen company
     # =========================================
-    ranked = _score_with_extra_terms(pool, extra_terms) if extra_terms else pool
-    print(f"ranked_pool_size={len(ranked)}")
+    
+    # add on the abs path from documents table meta 
+    for r in pool:
+        doc_id = r["document_id"]
+        r["path_date"] = get_doc_path_date(conn, doc_id)
+    from datetime import datetime
+    # Deduplicate by document_id (keep first occurrence)
+    seen = set()
+    deduped_pool = []
+    for r in pool:
+        doc_id = r["document_id"]
+        if doc_id not in seen:
+            seen.add(doc_id)
+            deduped_pool.append(r)
+
+    pool = deduped_pool
+    print(f"[UC2] pool_size (deduped)={len(pool)}")
+    ranked = pool
+
+    if use_case == "use_case_2" and not tickers:
+        print("[RANK] use_case_2 + no tickers → sorting by lowest total_hits then path_date DESC")
+
+        ranked = sorted(
+            pool,
+            key=lambda r: (
+                int(r.get("total_hits") or 0),
+                -(r["path_date"].timestamp() if r.get("path_date") else 0)   # SAFE
+            )
+        )
+
 
     picked = ranked[:top_k]
     picked_sorted = sorted(picked, key=pubdate, reverse=True)
