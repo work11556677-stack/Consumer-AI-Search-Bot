@@ -42,10 +42,13 @@ HTML_INDEX = """<!DOCTYPE html>
       --color-navy: #00205C;      /* rgb(0,32,92) */
       --color-teal: #62CBC9;      /* rgb(98,203,201) */
       --color-warm-grey: #C5B8AC; /* rgb(197,184,172) */
+      --color-bg: #00205C;
+      --color-text-dark: #111827;
+      --color-muted: #6B7280;
 
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background-color: var(--color-navy);
-      color: #111827;
+      background-color: var(--color-bg);
+      color: var(--color-text-dark);
     }
     * {
       box-sizing: border-box;
@@ -53,13 +56,16 @@ HTML_INDEX = """<!DOCTYPE html>
     body {
       margin: 0;
       padding: 0;
-      background:
-        radial-gradient(circle at top left, rgba(98,203,201,0.15), transparent 55%),
-        radial-gradient(circle at bottom right, rgba(197,184,172,0.12), transparent 55%),
-        var(--color-navy);
-      color: #111827;
+      /* Teal outer, fading to white near the centre (under the card) */
+      background: radial-gradient(
+        circle at center,
+        #ffffff 0%,
+        #ffffff 35%,
+        rgba(98,203,201,0.45) 70%,
+        #62CBC9 100%
+      );
+      color: var(--color-text-dark);
     }
-
     .page {
       min-height: 100vh;
       display: flex;
@@ -74,10 +80,10 @@ HTML_INDEX = """<!DOCTYPE html>
       border-radius: 20px;
       padding: 24px 28px;
       box-shadow:
-        0 18px 40px rgba(0,0,0,0.35),
-        0 0 0 1px rgba(15,23,42,0.08);
+        0 18px 40px rgba(0,0,0,0.30),
+        0 0 0 1px rgba(15,23,42,0.05);
       border: 1px solid rgba(148,163,184,0.4);
-      color: #111827;
+      color: var(--color-text-dark);
     }
     h1 {
       margin: 0 0 0.35rem 0;
@@ -102,7 +108,7 @@ HTML_INDEX = """<!DOCTYPE html>
     .subtitle {
       margin-bottom: 1.5rem;
       font-size: 0.92rem;
-      color: #4B5563;
+      color: var(--color-muted);
     }
     form {
       display: flex;
@@ -119,7 +125,7 @@ HTML_INDEX = """<!DOCTYPE html>
     }
     label {
       font-size: 0.8rem;
-      color: #6B7280;
+      color: var(--color-muted);
       text-transform: uppercase;
       letter-spacing: 0.12em;
     }
@@ -127,7 +133,7 @@ HTML_INDEX = """<!DOCTYPE html>
       border-radius: 12px;
       border: 2px solid var(--color-teal);
       background-color: #ffffff;
-      color: #111827;
+      color: var(--color-text-dark);
       padding: 0.6rem 0.8rem;
       font-size: 0.9rem;
       outline: none;
@@ -180,10 +186,10 @@ HTML_INDEX = """<!DOCTYPE html>
       margin-bottom: 0.5rem;
       min-height: 1.25rem;
       font-size: 0.8rem;
-      color: #6B7280;
+      color: var(--color-muted);
     }
 
-    /* Containers for result sections – no outer box, just three white boxes */
+    /* Results container – just a column of boxes, no dark wrapper */
     .results {
       display: flex;
       flex-direction: column;
@@ -203,7 +209,7 @@ HTML_INDEX = """<!DOCTYPE html>
       font-size: 0.8rem;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      color: #6B7280;
+      color: var(--color-muted);
       margin-bottom: 0.35rem;
     }
     .results-header span {
@@ -216,27 +222,27 @@ HTML_INDEX = """<!DOCTYPE html>
     .summary-content li {
       margin-bottom: 0.25rem;
       line-height: 1.45;
-      color: #111827;
+      color: var(--color-text-dark);
     }
     .pill {
       border-radius: 999px;
       padding: 0.2rem 0.7rem;
       border: 1px solid rgba(148,163,184,0.5);
       font-size: 0.7rem;
-      color: #4B5563;
+      color: var(--color-muted);
       background: #F9FAFB;
     }
     .source-item, .citation-item {
       margin-bottom: 0.2rem;
       line-height: 1.45;
-      color: #111827;
+      color: var(--color-text-dark);
     }
     .source-title {
       font-weight: 500;
     }
     .source-meta {
       font-size: 0.75rem;
-      color: #6B7280;
+      color: var(--color-muted);
     }
     .source-meta a {
       color: #111827;
@@ -249,7 +255,7 @@ HTML_INDEX = """<!DOCTYPE html>
     }
     .raw-json-toggle {
       font-size: 0.75rem;
-      color: #6B7280;
+      color: var(--color-muted);
       cursor: pointer;
       text-decoration: underline;
       text-underline-offset: 2px;
@@ -289,6 +295,59 @@ HTML_INDEX = """<!DOCTYPE html>
     .citation-pill a:hover {
       text-decoration: underline;
     }
+
+    /* Summary line layout for expand feature */
+    .summary-line-main {
+      display: block;
+    }
+    .summary-line-controls {
+      margin-top: 0.35rem;
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .expand-slot {
+      margin-top: 0.4rem;
+    }
+    .expanded-block {
+      padding: 0.5rem 0.6rem;
+      border-radius: 10px;
+      background: #F9FAFB;
+      border: 1px solid rgba(148,163,184,0.6);
+      font-size: 0.85rem;
+      color: #111827;
+    }
+    .expanded-block ul {
+      margin: 0.25rem 0 0.25rem 1.0rem;
+      padding: 0;
+    }
+
+    /* Small expand buttons inside bullets */
+    .expand-btn {
+      border-radius: 999px;
+      border: 1px solid var(--color-teal);
+      background: #ffffff;
+      color: var(--color-text-dark);
+      padding: 0.15rem 0.7rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      box-shadow: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .expand-btn::after {
+      content: "⤵";
+      font-size: 0.8rem;
+      opacity: 0.8;
+    }
+    .expand-btn:hover:not(:disabled) {
+      background: #E6FBFA;
+    }
+    .expand-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
   </style>
 </head>
 <body>
@@ -296,7 +355,7 @@ HTML_INDEX = """<!DOCTYPE html>
     <div class="card">
       <h1>
         CrAIg
-        <span class="logo-pill">Retail and Consumer Discretionary Report Copilot</span>
+        <span class="logo-pill">RETAIL MOSAIC Copilot</span>
       </h1>
       <div class="subtitle">
         Ask a question! CrAIg finds the right reports, summarises the key points and links you straight to the evidence.
@@ -381,36 +440,168 @@ HTML_INDEX = """<!DOCTYPE html>
         .replace(/'/g, "&#039;");
     }
 
+    async function pollExpandJob(jobId, slotEl, btnEl) {
+      if (btnEl) btnEl.disabled = true;
+
+      try {
+        while (true) {
+          const resp = await fetch("/api/job/" + jobId);
+          if (!resp.ok) {
+            const text = await resp.text();
+            slotEl.innerHTML = '<em style="color:#b91c1c;">Error: ' + escapeHtml(text) + '</em>';
+            break;
+          }
+          const job = await resp.json();
+          if (job.status === "done") {
+            const result = job.result || {};
+            const expSummary = result.summary || "";
+            let innerHtml = "";
+
+            if (expSummary) {
+              // Format expansion like main bullets, but NO source markers or pills.
+              const lines = expSummary
+                .split("\\n")
+                .map(l => l.trim())
+                .filter(l => l.length > 0);
+
+              const liHtml = lines.map(line => {
+                let text = line.replace(/^\\s*-\\s*/, "");
+                text = text.replace(/\\[S\\d+\\s+p\\d+[^\\]]*\\]/g, "");
+                text = text.trim();
+                return "<li>" + escapeHtml(text) + "</li>";
+              }).join("");
+
+              innerHtml = "<ul>" + liHtml + "</ul>";
+            } else if (result.summary_html) {
+              innerHtml = result.summary_html;
+            } else {
+              innerHtml = "<em>No expansion returned.</em>";
+            }
+
+            slotEl.innerHTML =
+              '<div class="expanded-block">' +
+                innerHtml +
+              '</div>';
+            break;
+          } else if (job.status === "pending" || job.status === "processing") {
+            await new Promise(r => setTimeout(r, 1200));
+          } else {
+            slotEl.innerHTML = '<em style="color:#b91c1c;">Error: unexpected status ' + escapeHtml(job.status) + '</em>';
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        slotEl.innerHTML = '<em style="color:#b91c1c;">Error: ' + escapeHtml(err && err.message ? err.message : String(err)) + '</em>';
+      } finally {
+        if (btnEl) btnEl.disabled = false;
+      }
+    }
+
+    function wireExpandButtons() {
+      document.querySelectorAll(".expand-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const li = btn.closest("li");
+          if (!li) return;
+          const slot = li.querySelector(".expand-slot");
+          const mainLine = li.querySelector(".summary-line-main");
+          if (!slot || !mainLine) return;
+
+          const docId = btn.getAttribute("data-doc-id");
+          const bulletText = mainLine.innerText.trim();
+
+          slot.innerHTML = "<em>Expanding this point…</em>";
+
+          try {
+            const resp = await fetch("/api/expand", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                doc_id: docId,
+                bullet: bulletText
+              })
+            });
+
+            if (!resp.ok) {
+              const text = await resp.text();
+              slot.innerHTML = '<em style="color:#b91c1c;">Error: ' + escapeHtml(text) + '</em>';
+              return;
+            }
+
+            const data = await resp.json();
+            const jobId = data.job_id;
+            if (!jobId) {
+              slot.innerHTML = '<em style="color:#b91c1c;">No job_id returned.</em>';
+              return;
+            }
+
+            await pollExpandJob(jobId, slot, btn);
+          } catch (err) {
+            console.error(err);
+            slot.innerHTML = '<em style="color:#b91c1c;">Error: ' + escapeHtml(err && err.message ? err.message : String(err)) + '</em>';
+          }
+        });
+      });
+    }
+
     function renderResult(data) {
       const sources = Array.isArray(data.sources) ? data.sources : [];
       const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
       const summary = data.summary || "";
 
-      // ===== 1) Build summary HTML ourselves from `summary` + citations =====
+      // ===== 1) SUMMARY (bullets + citation pills + expand buttons) =====
       if (summary) {
         const lines = summary.split("\\n").filter(line => line.trim().length > 0);
         const itemsHtml = lines.map((line, idx) => {
           const bulletNum = idx + 1;
 
+          // Clean text: strip "- " and raw [S# p# "..."] markers
           let text = line.replace(/^\\s*-\\s*/, "");
           text = text.replace(/\\[S\\d+\\s+p\\d+[^\\]]*\\]/g, "");
           text = text.trim();
 
-          const citsForBullet = citations.filter(c => c.bullet === bulletNum);
+          // Match citations for this bullet (handle "bullet": "1" as well)
+          const citsForBullet = citations.filter(c => {
+            const bRaw = c.bullet;
+            const b = bRaw != null ? parseInt(bRaw, 10) : NaN;
+            return !Number.isNaN(b) && b === bulletNum;
+          });
 
+          // Decide primary doc_id for expansion from first citation
+          let primaryDocId = null;
+          if (citsForBullet.length > 0) {
+            const first = citsForBullet[0];
+            const sRaw = first.S;
+            const sVal = sRaw != null ? parseInt(sRaw, 10) : NaN;
+            if (!Number.isNaN(sVal) && sVal >= 1 && sVal <= sources.length) {
+              const src = sources[sVal - 1];
+              if (src && src.document_id != null) {
+                primaryDocId = src.document_id;
+              }
+            }
+          }
+
+          // Citation pills (click to open PDF)
           const pillsHtml = citsForBullet.map(c => {
-            const sVal = c.S;
-            const pageNum = c.page;
+            const sRaw = c.S;
+            const pRaw = c.page;
+
+            const sVal = sRaw != null ? parseInt(sRaw, 10) : NaN;
+            const pageNum = pRaw != null ? parseInt(pRaw, 10) : null;
             const quoteText = c.quote || "";
 
             let href = null;
-            if (Number.isInteger(sVal) && sVal >= 1 && sVal <= sources.length) {
+            if (!Number.isNaN(sVal) && sVal >= 1 && sVal <= sources.length) {
               const src = sources[sVal - 1];
               if (src && src.url) {
                 href = src.url;
                 const params = [];
-                if (pageNum != null) params.push("page=" + encodeURIComponent(pageNum));
-                if (quoteText) params.push("quote=" + encodeURIComponent(quoteText));
+                if (pageNum != null && !Number.isNaN(pageNum)) {
+                  params.push("page=" + encodeURIComponent(pageNum));
+                }
+                if (quoteText) {
+                  params.push("quote=" + encodeURIComponent(quoteText));
+                }
                 if (params.length > 0) {
                   href += (href.includes("?") ? "&" : "?") + params.join("&");
                 }
@@ -422,21 +613,41 @@ HTML_INDEX = """<!DOCTYPE html>
             if (safeQuote) {
               labelParts.push("“" + safeQuote + "”");
             }
-            if (sVal != null) {
+            if (!Number.isNaN(sVal)) {
               let refLabel = "S" + sVal;
-              if (pageNum != null) refLabel += ", p" + pageNum;
+              if (pageNum != null && !Number.isNaN(pageNum)) {
+                refLabel += ", p" + pageNum;
+              }
               labelParts.push(refLabel);
             }
-            const label = labelParts.join(" - ");
+            const label = labelParts.join(" — ");
 
             if (href) {
-              return ' <span class="citation-pill"><a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a></span>';
+              return ' <span class="citation-pill"><a href="' + href +
+                     '" target="_blank" rel="noopener noreferrer">' +
+                     label + '</a></span>';
             } else {
               return ' <span class="citation-pill">' + label + '</span>';
             }
           }).join("");
 
-          return "<li>" + escapeHtml(text) + pillsHtml + "</li>";
+          const expandBtnHtml = primaryDocId !== null
+            ? '<button type="button" class="expand-btn" data-doc-id="' +
+              primaryDocId + '" data-bullet-index="' + bulletNum +
+              '">Expand</button>'
+            : "";
+
+          return (
+            '<li data-bullet-index="' + bulletNum + '">' +
+              '<div class="summary-line-main">' +
+                escapeHtml(text) + pillsHtml +
+              '</div>' +
+              (expandBtnHtml
+                ? '<div class="summary-line-controls">' + expandBtnHtml + '</div>'
+                : '') +
+              '<div class="expand-slot"></div>' +
+            '</li>'
+          );
         }).join("");
 
         summaryContentEl.innerHTML = "<ul>" + itemsHtml + "</ul>";
@@ -444,7 +655,7 @@ HTML_INDEX = """<!DOCTYPE html>
         summaryContentEl.innerHTML = "<em>No summary returned.</em>";
       }
 
-      // ===== 2) SOURCES section =====
+      // ===== 2) SOURCES =====
       sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
 
       if (sources.length === 0) {
@@ -473,30 +684,44 @@ HTML_INDEX = """<!DOCTYPE html>
         }).join("");
       }
 
-      // ===== 3) INLINE CITATIONS list (sidebar) =====
+      // ===== 3) INLINE CITATIONS SIDEBAR =====
       citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
 
       if (citations.length === 0) {
         citationsListEl.innerHTML = "<em>No inline citations yet.</em>";
       } else {
-        citationsListEl.innerHTML = citations.map((c) => {
+        citationsListEl.innerHTML = citations.map(c => {
           const bullet = c.bullet ?? "?";
-          const sIndex = (typeof c.S === "number") ? c.S - 1 : null;
-          const pageNum = c.page;
+
+          const sRaw = c.S;
+          const pRaw = c.page;
+
+          const sVal = sRaw != null ? parseInt(sRaw, 10) : NaN;
+          const pageNum = pRaw != null ? parseInt(pRaw, 10) : null;
+          const sIndex = !Number.isNaN(sVal) ? sVal - 1 : null;
           const quoteText = c.quote || "";
 
-          const sLabel = c.S != null ? "S" + c.S : "?";
-          const pageLabel = pageNum != null ? "p" + pageNum : "?";
+          const sLabel = !Number.isNaN(sVal) ? "S" + sVal : "?";
+          const pageLabel = pageNum != null && !Number.isNaN(pageNum) ? "p" + pageNum : "?";
           const text =
             "• Bullet " + bullet + " → " + sLabel + " " + pageLabel +
             (quoteText ? ' – “' + escapeHtml(quoteText) + '”' : "");
 
           let href = null;
-          if (sIndex != null && sIndex >= 0 && sIndex < sources.length && sources[sIndex].url) {
+          if (
+            sIndex != null &&
+            sIndex >= 0 &&
+            sIndex < sources.length &&
+            sources[sIndex].url
+          ) {
             href = sources[sIndex].url;
             const params = [];
-            if (pageNum != null) params.push("page=" + encodeURIComponent(pageNum));
-            if (quoteText) params.push("quote=" + encodeURIComponent(quoteText));
+            if (pageNum != null && !Number.isNaN(pageNum)) {
+              params.push("page=" + encodeURIComponent(pageNum));
+            }
+            if (quoteText) {
+              params.push("quote=" + encodeURIComponent(quoteText));
+            }
             if (params.length > 0) {
               href += (href.includes("?") ? "&" : "?") + params.join("&");
             }
@@ -516,8 +741,11 @@ HTML_INDEX = """<!DOCTYPE html>
         }).join("");
       }
 
-      // ===== 4) Raw JSON debug =====
+      // ===== 4) RAW JSON DEBUG =====
       rawJsonEl.textContent = JSON.stringify(data, null, 2);
+
+      // Wire expand buttons after rendering
+      wireExpandButtons();
     }
 
     async function pollJob(jobId) {
@@ -592,10 +820,23 @@ HTML_INDEX = """<!DOCTYPE html>
       rawJsonEl.style.display = isHidden ? "block" : "none";
       jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
     });
+
+    // Let Enter in the question box trigger the search
+    queryInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        } else {
+          form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+        }
+      }
+    });
   </script>
 </body>
 </html>
 """
+
 
 
 # -------------------------------------------------
@@ -647,27 +888,6 @@ def get_job(job_id: str):
         }
     )
 
-
-@app.route("/api/admin/next_job", methods=["GET"])
-def admin_next_job():
-    api_key = request.args.get("api_key")
-    if api_key != ADMIN_API_KEY:
-        return jsonify({"detail": "Invalid API key"}), 401
-
-    with jobs_lock:
-        for job in jobs.values():
-            if job["status"] == "pending":
-                job["status"] = "processing"
-                return jsonify(
-                    {
-                        "id": job["id"],
-                        "query": job["query"],
-                        "top_k": job["top_k"],
-                        "status": job["status"],
-                    }
-                )
-
-    return jsonify({"id": None, "status": "idle"})
 
 @app.route("/api/admin/job/<job_id>/upload_pdf", methods=["POST"])
 def admin_upload_pdf(job_id: str):
@@ -736,3 +956,60 @@ def admin_complete_job(job_id: str):
         job["result"] = result
 
     return jsonify({"ok": True})
+
+
+@app.route("/api/expand", methods=["POST"])
+def submit_expand():
+    data = request.get_json(silent=True) or {}
+    bullet = (data.get("bullet") or "").strip()
+    doc_id = data.get("doc_id")
+
+    if not bullet:
+        return jsonify({"error": "Bullet text cannot be empty"}), 400
+    if doc_id is None:
+        return jsonify({"error": "Missing doc_id"}), 400
+
+    try:
+        doc_id_int = int(doc_id)
+    except ValueError:
+        return jsonify({"error": "doc_id must be an integer"}), 400
+
+    job_id = str(uuid.uuid4())
+    job = {
+        "id": job_id,
+        "job_type": "expand_bullet",  # distinct from the normal search
+        "query": bullet,              # store the bullet text here
+        "doc_id": doc_id_int,
+        "status": "pending",
+        "result": None,
+    }
+
+    with jobs_lock:
+        jobs[job_id] = job
+
+    return jsonify({"job_id": job_id})
+
+
+
+@app.route("/api/admin/next_job", methods=["GET"])
+def admin_next_job():
+    api_key = request.args.get("api_key")
+    if api_key != ADMIN_API_KEY:
+        return jsonify({"detail": "Invalid API key"}), 401
+
+    with jobs_lock:
+        for job in jobs.values():
+            if job["status"] == "pending":
+                job["status"] = "processing"
+                return jsonify(
+                    {
+                        "id": job["id"],
+                        "job_type": job.get("job_type", "search"),
+                        "query": job.get("query"),
+                        "doc_id": job.get("doc_id"),
+                        "top_k": job.get("top_k", 5),
+                        "status": job["status"],
+                    }
+                )
+
+    return jsonify({"id": None, "status": "idle"})
