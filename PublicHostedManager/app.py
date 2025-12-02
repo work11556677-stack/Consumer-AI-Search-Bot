@@ -3,11 +3,16 @@ from __future__ import annotations
 import threading
 import uuid
 from typing import Any, Dict
-
+import os
+from flask import send_file
+from werkzeug.utils import secure_filename
 from flask import Flask, jsonify, request, Response
 
 app = Flask(__name__)
 
+
+PDF_TMP_DIR = "/tmp/craigai_pdfs"
+os.makedirs(PDF_TMP_DIR, exist_ok=True)
 
 
 jobs_lock = threading.Lock()
@@ -37,16 +42,10 @@ HTML_INDEX = """<!DOCTYPE html>
       --color-navy: #00205C;      /* rgb(0,32,92) */
       --color-teal: #62CBC9;      /* rgb(98,203,201) */
       --color-warm-grey: #C5B8AC; /* rgb(197,184,172) */
-      --color-bg: #00173f;
-      --color-card: #0b1220;
-      --color-card-soft: #0f172a;
-      --color-border: rgba(148,163,184,0.2);
-      --color-text: #F9FAFB;
-      --color-muted: #9CA3AF;
 
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background-color: var(--color-bg);
-      color: var(--color-text);
+      background-color: var(--color-navy);
+      color: #111827;
     }
     * {
       box-sizing: border-box;
@@ -54,14 +53,10 @@ HTML_INDEX = """<!DOCTYPE html>
     body {
       margin: 0;
       padding: 0;
-      /* Teal outer, fading into white around the centre where the card sits */
-      background: radial-gradient(
-          circle at center,
-          #ffffff 0%,
-          #ffffff 35%,
-          rgba(98,203,201,0.45) 70%,
-          #62CBC9 100%
-        );
+      background:
+        radial-gradient(circle at top left, rgba(98,203,201,0.15), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(197,184,172,0.12), transparent 55%),
+        var(--color-navy);
       color: #111827;
     }
 
@@ -75,24 +70,20 @@ HTML_INDEX = """<!DOCTYPE html>
     .card {
       width: 100%;
       max-width: 1000px;
-      background: linear-gradient(
-        135deg,
-        rgba(0,32,92,0.96),
-        rgba(11,18,32,0.98)
-      );
+      background: #ffffff;
       border-radius: 20px;
       padding: 24px 28px;
       box-shadow:
-        0 25px 60px rgba(0,0,0,0.8),
-        0 0 0 1px rgba(148,163,184,0.15);
-      border: 1px solid rgba(98,203,201,0.35);
-      backdrop-filter: blur(18px);
+        0 18px 40px rgba(0,0,0,0.35),
+        0 0 0 1px rgba(15,23,42,0.08);
+      border: 1px solid rgba(148,163,184,0.4);
+      color: #111827;
     }
     h1 {
       margin: 0 0 0.35rem 0;
       font-size: 1.7rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      text-transform: none;
       display: flex;
       align-items: baseline;
       gap: 0.4rem;
@@ -100,17 +91,18 @@ HTML_INDEX = """<!DOCTYPE html>
     h1 span.logo-pill {
       padding: 0.15rem 0.55rem;
       border-radius: 999px;
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       text-transform: uppercase;
-      letter-spacing: 0.15em;
-      border: 1px solid rgba(98,203,201,0.6);
-      color: var(--color-teal);
-      background: rgba(15,23,42,0.8);
+      letter-spacing: 0.18em;
+      border: 1px solid var(--color-teal);
+      color: #111827;
+      background: rgba(98,203,201,0.12);
+      white-space: nowrap;
     }
     .subtitle {
       margin-bottom: 1.5rem;
       font-size: 0.92rem;
-      color: var(--color-muted);
+      color: #4B5563;
     }
     form {
       display: flex;
@@ -127,57 +119,56 @@ HTML_INDEX = """<!DOCTYPE html>
     }
     label {
       font-size: 0.8rem;
-      color: var(--color-warm-grey);
+      color: #6B7280;
       text-transform: uppercase;
       letter-spacing: 0.12em;
     }
     input[type="text"] {
-      border-radius: 999px;
-      border: 1px solid rgba(148,163,184,0.45);
-      background-color: rgba(15,23,42,0.95);
-      color: var(--color-text);
-      padding: 0.6rem 1rem;
+      border-radius: 12px;
+      border: 2px solid var(--color-teal);
+      background-color: #ffffff;
+      color: #111827;
+      padding: 0.6rem 0.8rem;
       font-size: 0.9rem;
       outline: none;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
     input[type="text"]::placeholder {
-      color: rgba(148,163,184,0.7);
+      color: #9CA3AF;
     }
     input[type="text"]:focus {
       border-color: var(--color-teal);
-      box-shadow: 0 0 0 1px rgba(98,203,201,0.8);
-      background-color: #020617;
+      box-shadow: 0 0 0 2px rgba(98,203,201,0.35);
     }
     button {
       border: none;
       border-radius: 999px;
-      padding: 0.65rem 1.5rem;
+      padding: 0.65rem 1.6rem;
       font-size: 0.9rem;
       font-weight: 500;
       cursor: pointer;
-      background: linear-gradient(135deg, var(--color-teal), #8ff0eb);
-      color: #00111a;
+      background: var(--color-teal);
+      color: #111827;
       display: inline-flex;
       align-items: center;
       gap: 0.4rem;
       white-space: nowrap;
-      box-shadow: 0 12px 25px rgba(0,0,0,0.55);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
       transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
     }
     button::after {
       content: "↵";
       font-size: 0.9rem;
-      opacity: 0.8;
+      opacity: 0.9;
     }
     button:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 16px 35px rgba(0,0,0,0.7);
+      box-shadow: 0 14px 30px rgba(0,0,0,0.3);
       filter: brightness(1.03);
     }
     button:active:not(:disabled) {
       transform: translateY(0);
-      box-shadow: 0 10px 20px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.25);
       filter: brightness(0.98);
     }
     button:disabled {
@@ -189,26 +180,21 @@ HTML_INDEX = """<!DOCTYPE html>
       margin-bottom: 0.5rem;
       min-height: 1.25rem;
       font-size: 0.8rem;
-      color: var(--color-muted);
+      color: #6B7280;
     }
 
+    /* Containers for result sections – no outer box, just three white boxes */
     .results {
-      border-radius: 16px;
-      background: radial-gradient(circle at top left, rgba(98,203,201,0.06), transparent 55%),
-                  radial-gradient(circle at bottom right, rgba(197,184,172,0.06), transparent 55%),
-                  rgba(15,23,42,0.96);
-      border: 1px solid var(--color-border);
-      padding: 0.95rem 1rem;
-      font-size: 0.85rem;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      margin-top: 0.5rem;
     }
     .results-section {
-      border-radius: 12px;
-      padding: 0.6rem 0.8rem;
-      background: rgba(15,23,42,0.92);
-      border: 1px solid rgba(148,163,184,0.25);
+      border-radius: 14px;
+      padding: 0.7rem 0.85rem;
+      background: #ffffff;
+      border: 2px solid var(--color-teal);
     }
     .results-header {
       display: flex;
@@ -217,7 +203,7 @@ HTML_INDEX = """<!DOCTYPE html>
       font-size: 0.8rem;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      color: var(--color-muted);
+      color: #6B7280;
       margin-bottom: 0.35rem;
     }
     .results-header span {
@@ -230,40 +216,43 @@ HTML_INDEX = """<!DOCTYPE html>
     .summary-content li {
       margin-bottom: 0.25rem;
       line-height: 1.45;
+      color: #111827;
     }
     .pill {
       border-radius: 999px;
-      padding: 0.15rem 0.6rem;
-      border: 1px solid rgba(148,163,184,0.4);
+      padding: 0.2rem 0.7rem;
+      border: 1px solid rgba(148,163,184,0.5);
       font-size: 0.7rem;
-      color: var(--color-muted);
-      background: rgba(15,23,42,0.9);
+      color: #4B5563;
+      background: #F9FAFB;
     }
     .source-item, .citation-item {
       margin-bottom: 0.2rem;
       line-height: 1.45;
+      color: #111827;
     }
     .source-title {
       font-weight: 500;
-      color: var(--color-text);
     }
     .source-meta {
       font-size: 0.75rem;
-      color: var(--color-muted);
+      color: #6B7280;
     }
     .source-meta a {
-      color: var(--color-teal);
-      text-decoration: none;
+      color: #111827;
+      text-decoration: underline;
+      text-decoration-color: var(--color-teal);
+      text-underline-offset: 2px;
     }
     .source-meta a:hover {
-      text-decoration: underline;
+      text-decoration-thickness: 2px;
     }
     .raw-json-toggle {
       font-size: 0.75rem;
-      color: var(--color-muted);
+      color: #6B7280;
       cursor: pointer;
       text-decoration: underline;
-      margin-top: 0.25rem;
+      text-underline-offset: 2px;
     }
     .raw-json {
       margin-top: 0.3rem;
@@ -272,11 +261,12 @@ HTML_INDEX = """<!DOCTYPE html>
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 0.75rem;
       line-height: 1.35;
-      background: #020617;
+      background: #F9FAFB;
       border-radius: 8px;
       padding: 0.5rem 0.75rem;
-      border: 1px solid rgba(55,65,81,0.9);
+      border: 1px solid rgba(148,163,184,0.6);
       white-space: pre;
+      color: #111827;
     }
 
     /* Inline citation pill in the summary text */
@@ -286,10 +276,10 @@ HTML_INDEX = """<!DOCTYPE html>
       margin-top: 0.1rem;
       padding: 0.12rem 0.6rem;
       border-radius: 999px;
-      border: 1px solid rgba(98,203,201,0.7);
-      background: rgba(0,32,92,0.9);
+      border: 1px solid var(--color-teal);
+      background: #E6FBFA;
       font-size: 0.75rem;
-      color: var(--color-teal);
+      color: #111827;
       white-space: nowrap;
     }
     .citation-pill a {
@@ -306,10 +296,10 @@ HTML_INDEX = """<!DOCTYPE html>
     <div class="card">
       <h1>
         CrAIg
-        <span class="logo-pill">MST Research Copilot</span>
+        <span class="logo-pill">Retail and Consumer Discretionary Report Copilot</span>
       </h1>
       <div class="subtitle">
-        Natural language in. CrAIg fetches the right reports, pulls the evidence, and shows exactly where it came from.
+        Ask a question! CrAIg finds the right reports, summarises the key points and links you straight to the evidence.
       </div>
       <form id="search-form">
         <div class="field-group">
@@ -437,7 +427,7 @@ HTML_INDEX = """<!DOCTYPE html>
               if (pageNum != null) refLabel += ", p" + pageNum;
               labelParts.push(refLabel);
             }
-            const label = labelParts.join(" — ");
+            const label = labelParts.join(" - ");
 
             if (href) {
               return ' <span class="citation-pill"><a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a></span>';
@@ -678,6 +668,52 @@ def admin_next_job():
                 )
 
     return jsonify({"id": None, "status": "idle"})
+
+@app.route("/api/admin/job/<job_id>/upload_pdf", methods=["POST"])
+def admin_upload_pdf(job_id: str):
+    api_key = request.args.get("api_key")
+    if api_key != ADMIN_API_KEY:
+        return jsonify({"detail": "Invalid API key"}), 401
+
+    doc_id = request.args.get("doc_id")
+    if not doc_id:
+        return jsonify({"detail": "Missing doc_id"}), 400
+
+    if "file" not in request.files:
+        return jsonify({"detail": "Missing file"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"detail": "Empty filename"}), 400
+
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"detail": "Job not found"}), 404
+
+        safe_name = secure_filename(f"{job_id}_{doc_id}.pdf")
+        save_path = os.path.join(PDF_TMP_DIR, safe_name)
+        file.save(save_path)
+
+        pdf_paths = job.setdefault("pdf_paths", {})
+        pdf_paths[str(doc_id)] = save_path
+
+    return jsonify({"ok": True})
+
+@app.route("/pdf/<job_id>/<doc_id>", methods=["GET"])
+def serve_pdf(job_id: str, doc_id: str):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"detail": "Job not found"}), 404
+
+        pdf_paths = job.get("pdf_paths") or {}
+        path = pdf_paths.get(str(doc_id))
+
+    if not path or not os.path.exists(path):
+        return jsonify({"detail": "PDF not found"}), 404
+
+    return send_file(path, mimetype="application/pdf")
 
 
 @app.route("/api/admin/job/<job_id>/complete", methods=["POST"])
