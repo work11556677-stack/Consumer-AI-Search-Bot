@@ -279,7 +279,7 @@ HTML_INDEX = """<!DOCTYPE html>
     const jsonToggleEl = document.getElementById("json-toggle");
 
     function escapeHtml(str) {
-      return String(str)
+        return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -288,127 +288,138 @@ HTML_INDEX = """<!DOCTYPE html>
     }
 
     function renderResult(data) {
-      if (data.summary_html) {
+        if (data.summary_html) {
         summaryContentEl.innerHTML = data.summary_html;
-      } else if (data.summary) {
+        } else if (data.summary) {
         summaryContentEl.innerHTML = "<pre>" + escapeHtml(data.summary) + "</pre>";
-      } else {
+        } else {
         summaryContentEl.innerHTML = "<em>No summary returned.</em>";
-      }
+        }
 
-      const sources = Array.isArray(data.sources) ? data.sources : [];
-      sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
+        const sources = Array.isArray(data.sources) ? data.sources : [];
+        sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
 
-      if (sources.length === 0) {
+        if (sources.length === 0) {
         sourcesListEl.innerHTML = "<em>No sources.</em>";
-      } else {
+        } else {
         sourcesListEl.innerHTML = sources.map((src, idx) => {
-          const sLabel = "S" + (idx + 1);
-          const pages = Array.isArray(src.pages) ? src.pages.join(", ") : "";
-          const title = src.title || "(untitled)";
-          const docId = src.document_id != null ? src.document_id : "?";
-          return (
+            const sLabel = "S" + (idx + 1);
+            const pages = Array.isArray(src.pages) ? src.pages.join(", ") : "";
+            const title = src.title || "(untitled)";
+            const docId = src.document_id != null ? src.document_id : "?";
+            return (
             '<div class="source-item">' +
-              '<div class="source-title">' + sLabel + " – " + escapeHtml(title) + "</div>" +
-              '<div class="source-meta">document_id ' + docId + " · pages " + escapeHtml(pages) + "</div>" +
+                '<div class="source-title">' + sLabel + " – " + escapeHtml(title) + "</div>" +
+                '<div class="source-meta">document_id ' + docId + " · pages " + escapeHtml(pages) + "</div>" +
             "</div>"
-          );
+            );
         }).join("");
-      }
+        }
 
-      const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
-      citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
+        const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
+        citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
 
-      if (citations.length === 0) {
+        if (citations.length === 0) {
         citationsListEl.innerHTML = "<em>No inline citations.</em>";
-      } else {
+        } else {
         citationsListEl.innerHTML = citations.map((c) => {
-          const bullet = c.bullet ?? "?";
-          const s = c.S != null ? "S" + c.S : "?";
-          const page = c.page != null ? "p" + c.page : "?";
-          const quote = c.quote ? ' – “' + escapeHtml(c.quote) + '”' : "";
-          return (
+            const bullet = c.bullet ?? "?";
+            const s = c.S != null ? "S" + c.S : "?";
+            const page = c.page != null ? "p" + c.page : "?";
+            const quote = c.quote ? ' – “' + escapeHtml(c.quote) + '”' : "";
+            return (
             '<div class="citation-item">' +
-              "• Bullet " + bullet + " → " + s + " " + page + quote +
+                "• Bullet " + bullet + " → " + s + " " + page + quote +
             "</div>"
-          );
+            );
         }).join("");
-      }
+        }
 
-      rawJsonEl.textContent = JSON.stringify(data, null, 2);
+        rawJsonEl.textContent = JSON.stringify(data, null, 2);
     }
 
     async function pollJob(jobId) {
-      summaryPillEl.textContent = "Waiting for backend…";
-      while (true) {
-        const resp = await fetch(`/api/job/${jobId}`);
-        if (!resp.ok) {
-          const text = await resp.text();
-          statusEl.textContent = "Error: " + text;
-          break;
-        }
-        const job = await resp.json();
+        summaryPillEl.textContent = "Waiting for backend…";
+        while (true) {
+        try {
+            const resp = await fetch(`/api/job/${jobId}`);
+            if (!resp.ok) {
+            const text = await resp.text();
+            statusEl.textContent = "Error: " + text;
+            submitBtn.disabled = false;        // ✅ allow new queries
+            break;
+            }
+            const job = await resp.json();
 
-        if (job.status === "done") {
-          statusEl.textContent = "Done.";
-          summaryPillEl.textContent = "Completed";
-          renderResult(job.result || {});
-          break;
-        } else if (job.status === "pending" || job.status === "processing") {
-          statusEl.textContent = "Processing on backend…";
-          await new Promise(r => setTimeout(r, 2000));
-        } else {
-          statusEl.textContent = "Error: unexpected status " + job.status;
-          break;
+            if (job.status === "done") {
+            statusEl.textContent = "Done.";
+            summaryPillEl.textContent = "Completed";
+            renderResult(job.result || {});
+            submitBtn.disabled = false;        // ✅ re-enable button
+            break;
+            } else if (job.status === "pending" || job.status === "processing") {
+            statusEl.textContent = "Processing on backend…";
+            await new Promise(r => setTimeout(r, 2000));
+            } else {
+            statusEl.textContent = "Error: unexpected status " + job.status;
+            submitBtn.disabled = false;        // ✅ re-enable on weird state
+            break;
+            }
+        } catch (err) {
+            console.error(err);
+            statusEl.textContent = "Error: " + (err?.message || String(err));
+            submitBtn.disabled = false;          // ✅ re-enable on network error
+            break;
         }
-      }
+        }
     }
 
     async function runSearch(event) {
-      event.preventDefault();
+        event.preventDefault();
 
-      const q = queryInput.value.trim();
-      if (!q) return;
+        const q = queryInput.value.trim();
+        if (!q) return;
 
-      statusEl.textContent = "Submitting job…";
-      submitBtn.disabled = true;
-      summaryPillEl.textContent = "Queued";
+        statusEl.textContent = "Submitting job…";
+        submitBtn.disabled = true;               // lock while this query runs
+        summaryPillEl.textContent = "Queued";
 
-      try {
+        try {
         const resp = await fetch("/api/submit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ q, top_k: 5 })
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ q, top_k: 5 })
         });
 
         if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(`HTTP ${resp.status}: ${text}`);
+            const text = await resp.text();
+            throw new Error(`HTTP ${resp.status}: ${text}`);
         }
 
         const data = await resp.json();
         const jobId = data.job_id;
         if (!jobId) {
-          throw new Error("No job_id returned");
+            throw new Error("No job_id returned");
         }
 
         statusEl.textContent = "Job submitted. Waiting for result…";
-        pollJob(jobId);
-      } catch (err) {
+        pollJob(jobId);                        // pollJob will re-enable the button
+        } catch (err) {
         console.error(err);
         statusEl.textContent = "Error: " + (err?.message || String(err));
-        submitBtn.disabled = false;
-      }
+        submitBtn.disabled = false;           // re-enable on submit error
+        }
     }
 
     form.addEventListener("submit", runSearch);
 
     jsonToggleEl.addEventListener("click", () => {
-      const isHidden = rawJsonEl.style.display === "none";
-      rawJsonEl.style.display = isHidden ? "block" : "none";
-      jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
+        const isHidden = rawJsonEl.style.display === "none";
+        rawJsonEl.style.display = isHidden ? "block" : "none";
+        jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
     });
-  </script>
+    </script>
+
 </body>
 </html>
 """
