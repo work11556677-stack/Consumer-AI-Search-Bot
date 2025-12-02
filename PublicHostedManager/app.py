@@ -189,7 +189,7 @@ HTML_INDEX = """<!DOCTYPE html>
       color: var(--color-muted);
     }
 
-    /* Results container – just a column of boxes, no dark wrapper */
+    /* Results container – just a column of boxes */
     .results {
       display: flex;
       flex-direction: column;
@@ -211,9 +211,17 @@ HTML_INDEX = """<!DOCTYPE html>
       letter-spacing: 0.12em;
       color: var(--color-muted);
       margin-bottom: 0.35rem;
+      gap: 0.5rem;
     }
     .results-header span {
       font-weight: 600;
+    }
+    .results-header-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex: 1 1 auto;
+      min-width: 0;
     }
     .summary-content ul {
       margin: 0.25rem 0 0.25rem 1.1rem;
@@ -252,13 +260,6 @@ HTML_INDEX = """<!DOCTYPE html>
     }
     .source-meta a:hover {
       text-decoration-thickness: 2px;
-    }
-    .raw-json-toggle {
-      font-size: 0.75rem;
-      color: var(--color-muted);
-      cursor: pointer;
-      text-decoration: underline;
-      text-underline-offset: 2px;
     }
     .raw-json {
       margin-top: 0.3rem;
@@ -348,6 +349,26 @@ HTML_INDEX = """<!DOCTYPE html>
       opacity: 0.6;
       cursor: default;
     }
+
+    /* Grey "expand" pill for sections */
+    .section-toggle {
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.6);
+      background: #E5E7EB;
+      color: var(--color-muted);
+      padding: 0.15rem 0.7rem;
+      font-size: 0.7rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .section-toggle:hover {
+      background: #D1D5DB;
+    }
+
+    .collapsible-body {
+      margin-top: 0.4rem;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -375,42 +396,62 @@ HTML_INDEX = """<!DOCTYPE html>
       <div id="status" class="status"></div>
 
       <div id="results" class="results">
+        <!-- SUMMARY (always visible) -->
         <div class="results-section">
           <div class="results-header">
-            <span>Summary</span>
-            <span class="pill" id="summary-pill">Waiting for query…</span>
+            <div class="results-header-main">
+              <span>Summary</span>
+              <span class="pill" id="summary-pill">Waiting for query…</span>
+            </div>
           </div>
           <div id="summary-content" class="summary-content">
             <em>No results yet.</em>
           </div>
         </div>
 
+        <!-- SOURCES (collapsible) -->
         <div class="results-section">
           <div class="results-header">
-            <span>Sources</span>
-            <span class="pill" id="sources-count">0 docs</span>
+            <div class="results-header-main">
+              <span>Sources</span>
+              <span class="pill" id="sources-count">0 docs</span>
+            </div>
+            <button type="button" class="section-toggle" id="sources-toggle">Show details ▾</button>
           </div>
-          <div id="sources-list">
-            <em>No sources yet.</em>
+          <div id="sources-body" class="collapsible-body">
+            <div id="sources-list">
+              <em>No sources yet.</em>
+            </div>
           </div>
         </div>
 
+        <!-- INLINE CITATIONS (collapsible) -->
         <div class="results-section">
           <div class="results-header">
-            <span>Inline citations</span>
-            <span class="pill" id="citations-count">0 refs</span>
+            <div class="results-header-main">
+              <span>Inline citations</span>
+              <span class="pill" id="citations-count">0 refs</span>
+            </div>
+            <button type="button" class="section-toggle" id="citations-toggle">Show details ▾</button>
           </div>
-          <div id="citations-list">
-            <em>No inline citations yet.</em>
+          <div id="citations-body" class="collapsible-body">
+            <div id="citations-list">
+              <em>No inline citations yet.</em>
+            </div>
           </div>
         </div>
 
+        <!-- RAW JSON (collapsible) -->
         <div class="results-section">
           <div class="results-header">
-            <span>Raw JSON</span>
+            <div class="results-header-main">
+              <span>Raw JSON</span>
+            </div>
+            <button type="button" class="section-toggle" id="raw-toggle">Show payload ▾</button>
           </div>
-          <div class="raw-json-toggle" id="json-toggle">Show raw payload</div>
-          <pre id="raw-json" class="raw-json" style="display:none;">{}</pre>
+          <div id="raw-body" class="collapsible-body">
+            <pre id="raw-json" class="raw-json">{}</pre>
+          </div>
         </div>
       </div>
     </div>
@@ -429,7 +470,13 @@ HTML_INDEX = """<!DOCTYPE html>
     const citationsListEl = document.getElementById("citations-list");
     const citationsCountEl = document.getElementById("citations-count");
     const rawJsonEl = document.getElementById("raw-json");
-    const jsonToggleEl = document.getElementById("json-toggle");
+
+    const sourcesToggleEl = document.getElementById("sources-toggle");
+    const citationsToggleEl = document.getElementById("citations-toggle");
+    const rawToggleEl = document.getElementById("raw-toggle");
+    const sourcesBodyEl = document.getElementById("sources-body");
+    const citationsBodyEl = document.getElementById("citations-body");
+    const rawBodyEl = document.getElementById("raw-body");
 
     function escapeHtml(str) {
       return String(str)
@@ -438,6 +485,23 @@ HTML_INDEX = """<!DOCTYPE html>
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+    }
+
+    function setupSectionToggle(toggleEl, bodyEl, showLabel, hideLabel) {
+      if (!toggleEl || !bodyEl) return;
+      toggleEl.addEventListener("click", () => {
+        const isHidden = bodyEl.style.display === "none" || bodyEl.style.display === "";
+        if (isHidden) {
+          bodyEl.style.display = "block";
+          toggleEl.textContent = hideLabel;
+        } else {
+          bodyEl.style.display = "none";
+          toggleEl.textContent = showLabel;
+        }
+      });
+      // Start collapsed
+      bodyEl.style.display = "none";
+      toggleEl.textContent = showLabel;
     }
 
     async function pollExpandJob(jobId, slotEl, btnEl) {
@@ -560,7 +624,7 @@ HTML_INDEX = """<!DOCTYPE html>
           text = text.replace(/\\[S\\d+\\s+p\\d+[^\\]]*\\]/g, "");
           text = text.trim();
 
-          // Match citations for this bullet (handle "bullet": "1" as well)
+          // Match citations for this bullet (handle numeric or string bullet field)
           const citsForBullet = citations.filter(c => {
             const bRaw = c.bullet;
             const b = bRaw != null ? parseInt(bRaw, 10) : NaN;
@@ -633,8 +697,7 @@ HTML_INDEX = """<!DOCTYPE html>
 
           const expandBtnHtml = primaryDocId !== null
             ? '<button type="button" class="expand-btn" data-doc-id="' +
-              primaryDocId + '" data-bullet-index="' + bulletNum +
-              '">Expand</button>'
+              primaryDocId + '" data-bullet-index="' + bulletNum + '">Expand</button>'
             : "";
 
           return (
@@ -744,7 +807,7 @@ HTML_INDEX = """<!DOCTYPE html>
       // ===== 4) RAW JSON DEBUG =====
       rawJsonEl.textContent = JSON.stringify(data, null, 2);
 
-      // Wire expand buttons after rendering
+      // Wire expand buttons after rendering summary
       wireExpandButtons();
     }
 
@@ -815,11 +878,25 @@ HTML_INDEX = """<!DOCTYPE html>
 
     form.addEventListener("submit", runSearch);
 
-    jsonToggleEl.addEventListener("click", () => {
-      const isHidden = rawJsonEl.style.display === "none";
-      rawJsonEl.style.display = isHidden ? "block" : "none";
-      jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
-    });
+    // Collapsible toggles for sections
+    setupSectionToggle(
+      sourcesToggleEl,
+      sourcesBodyEl,
+      "Show details ▾",
+      "Hide details ▴"
+    );
+    setupSectionToggle(
+      citationsToggleEl,
+      citationsBodyEl,
+      "Show details ▾",
+      "Hide details ▴"
+    );
+    setupSectionToggle(
+      rawToggleEl,
+      rawBodyEl,
+      "Show payload ▾",
+      "Hide payload ▴"
+    );
 
     // Let Enter in the question box trigger the search
     queryInput.addEventListener("keydown", (e) => {
@@ -836,6 +913,7 @@ HTML_INDEX = """<!DOCTYPE html>
 </body>
 </html>
 """
+
 
 
 
