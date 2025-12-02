@@ -453,3 +453,86 @@ def print_gen_doc_ids(conn):
     # Print all document IDs
     doc_ids = [int(r["document_id"]) for r in pool]
     print("GEN document_ids:", doc_ids)
+
+def get_document_fields(
+    conn: sqlite3.Connection,
+    document_id: int,
+) -> Dict[str, Any]:
+    """
+    Fetch title/published_at/file_uri/meta for a document_id from the `document` table,
+    and derive source_url/source_path from the meta JSON.
+
+    Returns a dict with keys:
+      - title
+      - published_at
+      - file_uri
+      - mime_type
+      - source_url
+      - source_path
+      - meta (decoded JSON dict, or {})
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT title, published_at, file_uri, mime_type, meta
+        FROM document
+        WHERE document_id = ?
+        """,
+        (document_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        # safe empty defaults if doc not found
+        return {
+            "title": "",
+            "published_at": "",
+            "file_uri": "",
+            "mime_type": "",
+            "source_url": "",
+            "source_path": "",
+            "meta": {},
+        }
+
+    title, published_at, file_uri, mime_type, meta_json = row
+
+    meta: Dict[str, Any] = {}
+    if meta_json:
+        try:
+            meta = json.loads(meta_json) if isinstance(meta_json, str) else meta_json
+        except Exception:
+            meta = {}
+
+    # Fill from meta as fallbacks
+    title = title or meta.get("page_title") or meta.get("title") or ""
+    published_at = (
+        published_at
+        or meta.get("published_at")
+        or meta.get("date")
+        or ""
+    )
+
+    # "file_uri" is usually the raw path or URL stored in the document table
+    # For source_url we try meta first, then file_uri
+    source_url = (
+        meta.get("source_url")
+        or meta.get("url")
+        or file_uri
+        or ""
+    )
+
+    # source_path lives in meta (e.g. local filesystem path or relative path)
+    source_path = (
+        meta.get("source_path")
+        or meta.get("path")
+        or ""
+    )
+
+    return {
+        "title": title or "",
+        "published_at": published_at or "",
+        "file_uri": file_uri or "",
+        "mime_type": mime_type or "",
+        "source_url": source_url or "",
+        "source_path": source_path or "",
+        "meta": meta,
+    }
