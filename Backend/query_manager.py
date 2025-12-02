@@ -1652,3 +1652,124 @@ def main(q, top_k, conn):
         "inline_citations": citations,
     }
     return data
+
+
+
+
+
+
+# =========================================
+# EXPAND UPON ... FUNCTION 
+# =========================================
+
+def _make_ref_for_document(conn, doc_id: int) -> Dict[str, Any]:
+    """
+    Build a single ref dict for a given document_id, compatible with _build_context_blocks.
+    We pull canonical fields from document table via database_manager.get_document_fields.
+    """
+    doc_fields = database_manager.get_document_fields(conn, doc_id)
+    if not doc_fields:
+        raise ValueError(f"No document fields found for document_id={doc_id}")
+
+    title = doc_fields.get("title") or f"document {doc_id}"
+    published_at = doc_fields.get("published_at")
+    meta = doc_fields.get("meta") or {}
+    # absolute path etc if you need it downstream
+    source_path = meta.get("absolute_path") or meta.get("source_path") or ""
+
+    ref: Dict[str, Any] = {
+        "document_id": int(doc_id),
+        "title": title,
+        "published_at": published_at,
+        "source_url": "",
+        "source_path": source_path,
+        # company_id etc are largely irrelevant here, but keep shape similar:
+        "company_id": int(meta.get("company_id") or -1),
+        "total_hits": 0,
+        "name_hits": 0,
+        "ticker_hits": 0,
+        "alias_hits": 0,
+    }
+    return ref
+
+
+def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
+    """
+    Expand on a single summary bullet using ONE underlying document.
+
+    Inputs:
+      - conn: open DB connection
+      - doc_id: int, MST document_id to use as S1
+      - bullet_text: the original bullet we want to go deeper on
+
+    Behaviour:
+      - Restrict context strictly to this document.
+      - Reuse the usual OUTPUT SPEC (bullets + CITATIONS(JSON) + Sources).
+      - Ask the model to *investigate and expand* on the topic in the bullet,
+        not just restate it.
+      - Return:
+          {
+            "summary": summary_md,
+            "summary_html": summary_html,
+            "sources": [ ... ],          # here, typically a single S1
+            "inline_citations": [ ... ], # [{bullet, S, page, quote}, ...]
+          }
+    """
+    print(f"query_manager:expand_bullet:FLOW: doc_id={doc_id}, bullet={bullet_text!r}")
+
+    # 1) Build a single ref for this doc (S1)
+    ref = _make_ref_for_document(conn, int(doc_id))
+    refs: List[Dict[str, Any]] = [ref]
+
+    # 2) Build context blocks as usual, but the pool is just this one doc
+    context_blocks, sources_for_prompt = _build_context_blocks(conn, refs)
+    print(
+        "query_manager:expand_bullet:DEBUG: context_blocks_nonempty="
+        f"{sum(1 for b in context_blocks if b.strip())} / {len(context_blocks)}"
+    )
+
+    if not any(b.strip() for b in context_blocks):
+        print("query_manager:expand_bullet:ERROR: No non-empty context blocks -> aborting.")
+        return {
+            "summary": "",
+            "summary_html": "<em>No content available for expansion.</em>",
+            "sources": sources_for_prompt,
+            "inline_citations": [],
+        }
+
+    # 3) Call the SAME LLM pipeline but with a different use_case + query text
+    #
+    #    Inside llm_summarize_persona you can check:
+    #        if use_case == "expand_bullet":  # tweak instructions
+    #            ...
+    #    while still reusing your OUTPUT SPEC + rules.
+    #
+    expand_query = (
+        "Please expand on the following bullet point using ONLY the supplied context. "
+        "Investigate the document to find the most relevant sections that explain the "
+        "drivers, context and implications of this point. Keep the existing OUTPUT SPEC "
+        "(bullets + CITATIONS(JSON) + Sources), but give a bit more depth than the "
+        "original bullet.\n\n"
+        f"ORIGINAL BULLET:\n{bullet_text}"
+    )
+
+    llm_out = llm_summarize_persona(
+        conn,
+        context_blocks=context_blocks,
+        user_query=expand_query,
+        use_case="expand_bullet",
+        sources_for_prompt=sources_for_prompt,
+    )
+
+    summary_md = llm_out["summary_md"]
+    citations = llm_out["citations"]
+
+    data = {
+        "summary": summary_md,
+        "summary_html": llm_out["summary_html"],
+        "sources": sources_for_prompt,        # S1, S2, ... (here usually just S1)
+        "inline_citations": citations,        # [{bullet, S, page, quote}, ...]
+    }
+    return data
+
+

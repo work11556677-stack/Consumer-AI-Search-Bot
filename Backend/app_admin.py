@@ -49,54 +49,72 @@ def send_job_result(job_id: str, result: Dict[str, Any]) -> None:
     resp.raise_for_status()
 
 
+
+
 def process_job(job: Dict[str, Any]) -> None:
     job_id = job["id"]
     q = job["query"]
     top_k = job.get("top_k", 5)
+    job_type = job.get("job_type", "search")
 
     print(f"[worker] Processing job {job_id!r} – query={q!r}, top_k={top_k}")
 
     conn = database_manager.db(config.DB_PATH_MAIN)
     try:
-        result = query_manager.main(q, top_k, conn)
-        sources = result.get("sources") or []
-        citations = result.get("inline_citations") or []
+        if job_type == "search": 
+            result = query_manager.main(q, top_k, conn)
+            sources = result.get("sources") or []
+            citations = result.get("inline_citations") or []
 
-        used_S = set()
-        for c in citations:
-            s_val = c.get("S")
-            if isinstance(s_val, int):
-                used_S.add(s_val)
+            used_S = set()
+            for c in citations:
+                s_val = c.get("S")
+                if isinstance(s_val, int):
+                    used_S.add(s_val)
 
-        for s in sorted(used_S):
-            idx = s - 1
-            if idx < 0 or idx >= len(sources):
-                print("1")
-                continue
+            for s in sorted(used_S):
+                idx = s - 1
+                if idx < 0 or idx >= len(sources):
+                    print("1")
+                    continue
 
-            src = sources[idx]
-            doc_id = src.get("document_id")
-            source_path = src.get("source_path") or ""
+                src = sources[idx]
+                doc_id = src.get("document_id")
+                source_path = src.get("source_path") or ""
 
-            if not doc_id or not source_path:
-                continue
+                if not doc_id or not source_path:
+                    continue
 
-            pdf_path = source_path_to_pdf_path(source_path)
-            if not pdf_path:
-                continue
+                pdf_path = source_path_to_pdf_path(source_path)
+                if not pdf_path:
+                    continue
 
-            try:
-                upload_pdf(job_id, str(doc_id), pdf_path)
-                src["url"] = f"{PA_BASE_URL}/pdf/{job_id}/{doc_id}"
-                print(f"[worker] Uploaded PDF for doc_id={doc_id}: {pdf_path}")
-            except Exception as e:
-                print(f"[worker] Failed to upload PDF for doc_id={doc_id}: {e!r}")
+                try:
+                    upload_pdf(job_id, str(doc_id), pdf_path)
+                    src["url"] = f"{PA_BASE_URL}/pdf/{job_id}/{doc_id}"
+                    print(f"[worker] Uploaded PDF for doc_id={doc_id}: {pdf_path}")
+                except Exception as e:
+                    print(f"[worker] Failed to upload PDF for doc_id={doc_id}: {e!r}")
+        
+        
+        elif job_type == "expand_bullet":
+            bullet_text = job.get("query") or ""
+            doc_id = job.get("doc_id")
+            if not bullet_text or doc_id is None:
+                raise ValueError("expand_bullet job missing bullet_text or doc_id")
+            print(f"[worker]  expand_bullet: doc_id={doc_id}, bullet={bullet_text!r}")
+            result = query_manager.expand_bullet(conn, int(doc_id), bullet_text)
+
+        else:
+            raise ValueError(f"Unknown job_type {job_type!r}")
+
     finally:
         conn.close()
 
     print(f"[worker] Finished job {job_id!r}, sending result back…")
     send_job_result(job_id, result)
     print(f"[worker] Result for job {job_id!r} sent.")
+
 
 
 def source_path_to_pdf_path(source_path: str) -> str | None:
