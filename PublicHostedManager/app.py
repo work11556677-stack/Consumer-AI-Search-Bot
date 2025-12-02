@@ -30,18 +30,41 @@ HTML_INDEX = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Overview Search</title>
+  <title>Ask CrAIg</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
+      --color-navy: #00205C;      /* rgb(0,32,92) */
+      --color-teal: #62CBC9;      /* rgb(98,203,201) */
+      --color-warm-grey: #C5B8AC; /* rgb(197,184,172) */
+      --color-bg: #00173f;
+      --color-card: #0b1220;
+      --color-card-soft: #0f172a;
+      --color-border: rgba(148,163,184,0.2);
+      --color-text: #F9FAFB;
+      --color-muted: #9CA3AF;
+
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background-color: #0f172a;
-      color: #e5e7eb;
+      background-color: var(--color-bg);
+      color: var(--color-text);
+    }
+    * {
+      box-sizing: border-box;
     }
     body {
       margin: 0;
       padding: 0;
+      /* Teal outer, fading into white around the centre where the card sits */
+      background: radial-gradient(
+          circle at center,
+          #ffffff 0%,
+          #ffffff 35%,
+          rgba(98,203,201,0.45) 70%,
+          #62CBC9 100%
+        );
+      color: #111827;
     }
+
     .page {
       min-height: 100vh;
       display: flex;
@@ -52,28 +75,49 @@ HTML_INDEX = """<!DOCTYPE html>
     .card {
       width: 100%;
       max-width: 1000px;
-      background: #020617;
-      border-radius: 16px;
+      background: linear-gradient(
+        135deg,
+        rgba(0,32,92,0.96),
+        rgba(11,18,32,0.98)
+      );
+      border-radius: 20px;
       padding: 24px 28px;
-      box-shadow: 0 18px 45px rgba(0,0,0,0.65);
-      border: 1px solid #1e293b;
+      box-shadow:
+        0 25px 60px rgba(0,0,0,0.8),
+        0 0 0 1px rgba(148,163,184,0.15);
+      border: 1px solid rgba(98,203,201,0.35);
+      backdrop-filter: blur(18px);
     }
     h1 {
       margin: 0 0 0.35rem 0;
-      font-size: 1.5rem;
-      letter-spacing: 0.03em;
+      font-size: 1.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+    }
+    h1 span.logo-pill {
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      border: 1px solid rgba(98,203,201,0.6);
+      color: var(--color-teal);
+      background: rgba(15,23,42,0.8);
     }
     .subtitle {
       margin-bottom: 1.5rem;
-      font-size: 0.9rem;
-      color: #9ca3af;
+      font-size: 0.92rem;
+      color: var(--color-muted);
     }
     form {
       display: flex;
       flex-wrap: wrap;
       gap: 0.75rem;
       margin-bottom: 1rem;
-      align-items: center;
+      align-items: flex-end;
     }
     .field-group {
       flex: 1 1 260px;
@@ -83,61 +127,88 @@ HTML_INDEX = """<!DOCTYPE html>
     }
     label {
       font-size: 0.8rem;
-      color: #9ca3af;
+      color: var(--color-warm-grey);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
     }
     input[type="text"] {
       border-radius: 999px;
-      border: 1px solid #1f2937;
-      background-color: #020617;
-      color: #e5e7eb;
-      padding: 0.55rem 0.9rem;
+      border: 1px solid rgba(148,163,184,0.45);
+      background-color: rgba(15,23,42,0.95);
+      color: var(--color-text);
+      padding: 0.6rem 1rem;
       font-size: 0.9rem;
       outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+    }
+    input[type="text"]::placeholder {
+      color: rgba(148,163,184,0.7);
     }
     input[type="text"]:focus {
-      border-color: #4b5563;
-      box-shadow: 0 0 0 1px #4b5563;
+      border-color: var(--color-teal);
+      box-shadow: 0 0 0 1px rgba(98,203,201,0.8);
+      background-color: #020617;
     }
     button {
       border: none;
       border-radius: 999px;
-      padding: 0.65rem 1.4rem;
+      padding: 0.65rem 1.5rem;
       font-size: 0.9rem;
       font-weight: 500;
       cursor: pointer;
-      background: #e5e7eb;
-      color: #020617;
+      background: linear-gradient(135deg, var(--color-teal), #8ff0eb);
+      color: #00111a;
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
+      gap: 0.4rem;
       white-space: nowrap;
+      box-shadow: 0 12px 25px rgba(0,0,0,0.55);
+      transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+    }
+    button::after {
+      content: "↵";
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 35px rgba(0,0,0,0.7);
+      filter: brightness(1.03);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(0);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.6);
+      filter: brightness(0.98);
     }
     button:disabled {
       opacity: 0.6;
       cursor: default;
+      box-shadow: none;
     }
     .status {
       margin-bottom: 0.5rem;
       min-height: 1.25rem;
       font-size: 0.8rem;
-      color: #9ca3af;
+      color: var(--color-muted);
     }
 
     .results {
-      border-radius: 12px;
-      background: #020617;
-      border: 1px solid #111827;
-      padding: 0.9rem 1rem;
+      border-radius: 16px;
+      background: radial-gradient(circle at top left, rgba(98,203,201,0.06), transparent 55%),
+                  radial-gradient(circle at bottom right, rgba(197,184,172,0.06), transparent 55%),
+                  rgba(15,23,42,0.96);
+      border: 1px solid var(--color-border);
+      padding: 0.95rem 1rem;
       font-size: 0.85rem;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
     }
     .results-section {
-      border-radius: 8px;
-      padding: 0.5rem 0.75rem;
-      background: rgba(15,23,42,0.8);
-      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 0.6rem 0.8rem;
+      background: rgba(15,23,42,0.92);
+      border: 1px solid rgba(148,163,184,0.25);
     }
     .results-header {
       display: flex;
@@ -145,8 +216,8 @@ HTML_INDEX = """<!DOCTYPE html>
       align-items: center;
       font-size: 0.8rem;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #9ca3af;
+      letter-spacing: 0.12em;
+      color: var(--color-muted);
       margin-bottom: 0.35rem;
     }
     .results-header span {
@@ -157,30 +228,39 @@ HTML_INDEX = """<!DOCTYPE html>
       padding: 0;
     }
     .summary-content li {
-      margin-bottom: 0.2rem;
+      margin-bottom: 0.25rem;
+      line-height: 1.45;
     }
     .pill {
       border-radius: 999px;
       padding: 0.15rem 0.6rem;
-      border: 1px solid #374151;
+      border: 1px solid rgba(148,163,184,0.4);
       font-size: 0.7rem;
-      color: #9ca3af;
+      color: var(--color-muted);
+      background: rgba(15,23,42,0.9);
     }
     .source-item, .citation-item {
-      margin-bottom: 0.15rem;
-      line-height: 1.4;
+      margin-bottom: 0.2rem;
+      line-height: 1.45;
     }
     .source-title {
       font-weight: 500;
-      color: #e5e7eb;
+      color: var(--color-text);
     }
     .source-meta {
       font-size: 0.75rem;
-      color: #9ca3af;
+      color: var(--color-muted);
+    }
+    .source-meta a {
+      color: var(--color-teal);
+      text-decoration: none;
+    }
+    .source-meta a:hover {
+      text-decoration: underline;
     }
     .raw-json-toggle {
       font-size: 0.75rem;
-      color: #9ca3af;
+      color: var(--color-muted);
       cursor: pointer;
       text-decoration: underline;
       margin-top: 0.25rem;
@@ -195,27 +275,51 @@ HTML_INDEX = """<!DOCTYPE html>
       background: #020617;
       border-radius: 8px;
       padding: 0.5rem 0.75rem;
-      border: 1px solid #111827;
+      border: 1px solid rgba(55,65,81,0.9);
       white-space: pre;
+    }
+
+    /* Inline citation pill in the summary text */
+    .citation-pill {
+      display: inline-block;
+      margin-left: 0.45rem;
+      margin-top: 0.1rem;
+      padding: 0.12rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(98,203,201,0.7);
+      background: rgba(0,32,92,0.9);
+      font-size: 0.75rem;
+      color: var(--color-teal);
+      white-space: nowrap;
+    }
+    .citation-pill a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .citation-pill a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
   <div class="page">
     <div class="card">
-      <h1>Overview Search</h1>
+      <h1>
+        CrAIg
+        <span class="logo-pill">MST Research Copilot</span>
+      </h1>
       <div class="subtitle">
-        Ask a question!
+        Natural language in. CrAIg fetches the right reports, pulls the evidence, and shows exactly where it came from.
       </div>
       <form id="search-form">
         <div class="field-group">
           <label for="query">Question</label>
-          <input id="query" type="text" placeholder="e.g. JBH outlook on gross margins" required />
+          <input id="query" type="text" placeholder="e.g. BRG: FY26e sales growth drivers and regional mix" required />
         </div>
         <div>
           <label style="visibility:hidden;">Search</label>
           <button type="submit" id="submit-btn">
-            Run search
+            Ask CrAIg
           </button>
         </div>
       </form>
@@ -279,7 +383,7 @@ HTML_INDEX = """<!DOCTYPE html>
     const jsonToggleEl = document.getElementById("json-toggle");
 
     function escapeHtml(str) {
-        return String(str)
+      return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -288,141 +392,221 @@ HTML_INDEX = """<!DOCTYPE html>
     }
 
     function renderResult(data) {
-        if (data.summary_html) {
-        summaryContentEl.innerHTML = data.summary_html;
-        } else if (data.summary) {
-        summaryContentEl.innerHTML = "<pre>" + escapeHtml(data.summary) + "</pre>";
-        } else {
+      const sources = Array.isArray(data.sources) ? data.sources : [];
+      const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
+      const summary = data.summary || "";
+
+      // ===== 1) Build summary HTML ourselves from `summary` + citations =====
+      if (summary) {
+        const lines = summary.split("\\n").filter(line => line.trim().length > 0);
+        const itemsHtml = lines.map((line, idx) => {
+          const bulletNum = idx + 1;
+
+          let text = line.replace(/^\\s*-\\s*/, "");
+          text = text.replace(/\\[S\\d+\\s+p\\d+[^\\]]*\\]/g, "");
+          text = text.trim();
+
+          const citsForBullet = citations.filter(c => c.bullet === bulletNum);
+
+          const pillsHtml = citsForBullet.map(c => {
+            const sVal = c.S;
+            const pageNum = c.page;
+            const quoteText = c.quote || "";
+
+            let href = null;
+            if (Number.isInteger(sVal) && sVal >= 1 && sVal <= sources.length) {
+              const src = sources[sVal - 1];
+              if (src && src.url) {
+                href = src.url;
+                const params = [];
+                if (pageNum != null) params.push("page=" + encodeURIComponent(pageNum));
+                if (quoteText) params.push("quote=" + encodeURIComponent(quoteText));
+                if (params.length > 0) {
+                  href += (href.includes("?") ? "&" : "?") + params.join("&");
+                }
+              }
+            }
+
+            const safeQuote = escapeHtml(quoteText);
+            const labelParts = [];
+            if (safeQuote) {
+              labelParts.push("“" + safeQuote + "”");
+            }
+            if (sVal != null) {
+              let refLabel = "S" + sVal;
+              if (pageNum != null) refLabel += ", p" + pageNum;
+              labelParts.push(refLabel);
+            }
+            const label = labelParts.join(" — ");
+
+            if (href) {
+              return ' <span class="citation-pill"><a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a></span>';
+            } else {
+              return ' <span class="citation-pill">' + label + '</span>';
+            }
+          }).join("");
+
+          return "<li>" + escapeHtml(text) + pillsHtml + "</li>";
+        }).join("");
+
+        summaryContentEl.innerHTML = "<ul>" + itemsHtml + "</ul>";
+      } else {
         summaryContentEl.innerHTML = "<em>No summary returned.</em>";
-        }
+      }
 
-        const sources = Array.isArray(data.sources) ? data.sources : [];
-        sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
+      // ===== 2) SOURCES section =====
+      sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
 
-        if (sources.length === 0) {
+      if (sources.length === 0) {
         sourcesListEl.innerHTML = "<em>No sources.</em>";
-        } else {
+      } else {
         sourcesListEl.innerHTML = sources.map((src, idx) => {
-            const sLabel = "S" + (idx + 1);
-            const pages = Array.isArray(src.pages) ? src.pages.join(", ") : "";
-            const title = src.title || "(untitled)";
-            const docId = src.document_id != null ? src.document_id : "?";
-            return (
+          const sLabel = "S" + (idx + 1);
+          const pages = Array.isArray(src.pages) ? src.pages.join(", ") : "";
+          const title = src.title || "(untitled)";
+          const docId = src.document_id != null ? src.document_id : "?";
+          const url = src.url;
+
+          const linkHtml = url
+            ? ' · <a href="' + url + '" target="_blank" rel="noopener noreferrer">Open PDF</a>'
+            : "";
+
+          return (
             '<div class="source-item">' +
-                '<div class="source-title">' + sLabel + " – " + escapeHtml(title) + "</div>" +
-                '<div class="source-meta">document_id ' + docId + " · pages " + escapeHtml(pages) + "</div>" +
+              '<div class="source-title">' + sLabel + " – " + escapeHtml(title) + "</div>" +
+              '<div class="source-meta">document_id ' + docId +
+                " · pages " + escapeHtml(pages) +
+                linkHtml +
+              "</div>" +
             "</div>"
-            );
+          );
         }).join("");
-        }
+      }
 
-        const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
-        citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
+      // ===== 3) INLINE CITATIONS list (sidebar) =====
+      citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
 
-        if (citations.length === 0) {
-        citationsListEl.innerHTML = "<em>No inline citations.</em>";
-        } else {
+      if (citations.length === 0) {
+        citationsListEl.innerHTML = "<em>No inline citations yet.</em>";
+      } else {
         citationsListEl.innerHTML = citations.map((c) => {
-            const bullet = c.bullet ?? "?";
-            const s = c.S != null ? "S" + c.S : "?";
-            const page = c.page != null ? "p" + c.page : "?";
-            const quote = c.quote ? ' – “' + escapeHtml(c.quote) + '”' : "";
-            return (
-            '<div class="citation-item">' +
-                "• Bullet " + bullet + " → " + s + " " + page + quote +
-            "</div>"
-            );
-        }).join("");
-        }
+          const bullet = c.bullet ?? "?";
+          const sIndex = (typeof c.S === "number") ? c.S - 1 : null;
+          const pageNum = c.page;
+          const quoteText = c.quote || "";
 
-        rawJsonEl.textContent = JSON.stringify(data, null, 2);
+          const sLabel = c.S != null ? "S" + c.S : "?";
+          const pageLabel = pageNum != null ? "p" + pageNum : "?";
+          const text =
+            "• Bullet " + bullet + " → " + sLabel + " " + pageLabel +
+            (quoteText ? ' – “' + escapeHtml(quoteText) + '”' : "");
+
+          let href = null;
+          if (sIndex != null && sIndex >= 0 && sIndex < sources.length && sources[sIndex].url) {
+            href = sources[sIndex].url;
+            const params = [];
+            if (pageNum != null) params.push("page=" + encodeURIComponent(pageNum));
+            if (quoteText) params.push("quote=" + encodeURIComponent(quoteText));
+            if (params.length > 0) {
+              href += (href.includes("?") ? "&" : "?") + params.join("&");
+            }
+          }
+
+          if (href) {
+            return (
+              '<div class="citation-item">' +
+                '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' +
+                  text +
+                '</a>' +
+              '</div>'
+            );
+          } else {
+            return '<div class="citation-item">' + text + '</div>';
+          }
+        }).join("");
+      }
+
+      // ===== 4) Raw JSON debug =====
+      rawJsonEl.textContent = JSON.stringify(data, null, 2);
     }
 
     async function pollJob(jobId) {
-        summaryPillEl.textContent = "Waiting for backend…";
-        while (true) {
-        try {
-            const resp = await fetch(`/api/job/${jobId}`);
-            if (!resp.ok) {
-            const text = await resp.text();
-            statusEl.textContent = "Error: " + text;
-            submitBtn.disabled = false;        // ✅ allow new queries
-            break;
-            }
-            const job = await resp.json();
+      summaryPillEl.textContent = "Waiting for backend…";
+      while (true) {
+        const resp = await fetch("/api/job/" + jobId);
+        if (!resp.ok) {
+          const text = await resp.text();
+          statusEl.textContent = "Error: " + text;
+          break;
+        }
+        const job = await resp.json();
 
-            if (job.status === "done") {
-            statusEl.textContent = "Done.";
-            summaryPillEl.textContent = "Completed";
-            renderResult(job.result || {});
-            submitBtn.disabled = false;        // ✅ re-enable button
-            break;
-            } else if (job.status === "pending" || job.status === "processing") {
-            statusEl.textContent = "Processing on backend…";
-            await new Promise(r => setTimeout(r, 2000));
-            } else {
-            statusEl.textContent = "Error: unexpected status " + job.status;
-            submitBtn.disabled = false;        // ✅ re-enable on weird state
-            break;
-            }
-        } catch (err) {
-            console.error(err);
-            statusEl.textContent = "Error: " + (err?.message || String(err));
-            submitBtn.disabled = false;          // ✅ re-enable on network error
-            break;
+        if (job.status === "done") {
+          statusEl.textContent = "Done.";
+          summaryPillEl.textContent = "Completed";
+          renderResult(job.result || {});
+          submitBtn.disabled = false;
+          break;
+        } else if (job.status === "pending" || job.status === "processing") {
+          statusEl.textContent = "Processing on backend…";
+          await new Promise(r => setTimeout(r, 2000));
+        } else {
+          statusEl.textContent = "Error: unexpected status " + job.status;
+          submitBtn.disabled = false;
+          break;
         }
-        }
+      }
     }
 
     async function runSearch(event) {
-        event.preventDefault();
+      event.preventDefault();
 
-        const q = queryInput.value.trim();
-        if (!q) return;
+      const q = queryInput.value.trim();
+      if (!q) return;
 
-        statusEl.textContent = "Submitting job…";
-        submitBtn.disabled = true;               // lock while this query runs
-        summaryPillEl.textContent = "Queued";
+      statusEl.textContent = "Submitting job…";
+      submitBtn.disabled = true;
+      summaryPillEl.textContent = "Queued";
 
-        try {
+      try {
         const resp = await fetch("/api/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ q, top_k: 5 })
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q: q, top_k: 5 })
         });
 
         if (!resp.ok) {
-            const text = await resp.text();
-            throw new Error(`HTTP ${resp.status}: ${text}`);
+          const text = await resp.text();
+          throw new Error("HTTP " + resp.status + ": " + text);
         }
 
         const data = await resp.json();
         const jobId = data.job_id;
         if (!jobId) {
-            throw new Error("No job_id returned");
+          throw new Error("No job_id returned");
         }
 
         statusEl.textContent = "Job submitted. Waiting for result…";
-        pollJob(jobId);                        // pollJob will re-enable the button
-        } catch (err) {
+        pollJob(jobId);
+      } catch (err) {
         console.error(err);
-        statusEl.textContent = "Error: " + (err?.message || String(err));
-        submitBtn.disabled = false;           // re-enable on submit error
-        }
+        statusEl.textContent = "Error: " + (err && err.message ? err.message : String(err));
+        submitBtn.disabled = false;
+      }
     }
 
     form.addEventListener("submit", runSearch);
 
     jsonToggleEl.addEventListener("click", () => {
-        const isHidden = rawJsonEl.style.display === "none";
-        rawJsonEl.style.display = isHidden ? "block" : "none";
-        jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
+      const isHidden = rawJsonEl.style.display === "none";
+      rawJsonEl.style.display = isHidden ? "block" : "none";
+      jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
     });
-    </script>
-
+  </script>
 </body>
 </html>
 """
+
 
 # -------------------------------------------------
 # ROUTES
