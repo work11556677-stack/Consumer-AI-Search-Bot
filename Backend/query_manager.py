@@ -1472,6 +1472,8 @@ def main(q, top_k, conn):
         did = int(r["document_id"])
         
         title, published_at, source_url, source_path = _derive_doc_fields(r)
+        print(source_url)
+        print(source_path)
         ref = {
             "document_id": did,
             "title": title,
