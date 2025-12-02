@@ -820,24 +820,11 @@ def _build_context_blocks(
     from the ranked refs.
 
     - For each ref/document:
-        * Fetch up to `max_chunks_per_doc` chunks from the `chunk` table.
-        * Concatenate their text into one context block (capped at `max_chars_per_doc`).
-        * Track page numbers from page_start/page_end.
-    - sources_for_prompt[i] corresponds to S(i+1) in the LLM prompt/output.
-
-    Returns:
-        (context_blocks, sources_for_prompt)
-        where:
-          context_blocks: List[str]
-          sources_for_prompt: List[Dict[str, Any]]
-            with keys:
-              - document_id
-              - title
-              - published_at
-              - pages       (sorted unique list of ints)
-              - db          ("main")
-              - source_path (absolute/derived path from refs)
-              - company_id, total_hits, name_hits, ticker_hits, alias_hits (if present)
+        * Fetch up to `max_chunks_per_doc` chunks from the `chunk` table
+          for the actual context text.
+        * Separately scan ALL chunks for that document to collect all pages.
+        * Concatenate chunk text into one context block (capped at `max_chars_per_doc`).
+        * Track page numbers from page_start/page_end across the whole doc.
     """
     context_blocks: List[str] = []
     sources_for_prompt: List[Dict[str, Any]] = []
@@ -847,9 +834,8 @@ def _build_context_blocks(
     for ref in refs:
         doc_id = ref["document_id"]
 
-        # -----------------------------
-        # 1) Fetch chunks for this doc
-        # -----------------------------
+        
+        # FLOW: Fetch limited chunks for context text
         cur.execute(
             """
             SELECT text, section, chunk_index, page_start, page_end
@@ -862,33 +848,27 @@ def _build_context_blocks(
         )
         rows = cur.fetchall()
         if not rows:
-            # no chunks -> skip this doc
             continue
 
-        # -----------------------------
-        # 2) Build context text + pages
-        # -----------------------------
         pieces: List[str] = []
-        pages_set = set()
+        pages_from_context = set()
 
         for text, section, chunk_index, page_start, page_end in rows:
             if not text:
                 continue
 
-            # Track pages
+            # pages *seen in the context text*
             if isinstance(page_start, int):
-                pages_set.add(page_start)
+                pages_from_context.add(page_start)
             if isinstance(page_end, int):
-                pages_set.add(page_end)
+                pages_from_context.add(page_end)
 
-            # Simple formatting: include section header if present
             if section:
                 pieces.append(f"[{section}]\n{text}")
             else:
                 pieces.append(text)
 
         if not pieces:
-            # no usable text -> skip
             continue
 
         # Join pieces and cap length to avoid overlong prompts
@@ -896,25 +876,45 @@ def _build_context_blocks(
         if len(full_text) > max_chars_per_doc:
             full_text = full_text[:max_chars_per_doc] + "\n\n[...]"
 
-        # Optional header for readability in the prompt
         header = f"Document: {ref.get('title') or ''} (id={doc_id}, published={ref.get('published_at') or ''})"
         block = header + "\n\n" + full_text
         context_blocks.append(block)
 
-        # -----------------------------
-        # 3) Build source entry for this doc
-        # -----------------------------
-        pages = sorted(p for p in pages_set if isinstance(p, int)) or [1]
+        
+        # FLOW: Separately collect ALL pages for this document
+        #    (not limited by max_chunks_per_doc)
+        
+        all_pages_set = set(pages_from_context)
 
+        cur.execute(
+            """
+            SELECT DISTINCT page_start, page_end
+            FROM chunk
+            WHERE document_id = ?
+            """,
+            (doc_id,),
+        )
+        all_page_rows = cur.fetchall()
+        for page_start, page_end in all_page_rows:
+            if isinstance(page_start, int):
+                all_pages_set.add(page_start)
+            if isinstance(page_end, int):
+                all_pages_set.add(page_end)
+
+        # Final pages list; if still empty, fall back to [1]
+        pages = sorted(p for p in all_pages_set if isinstance(p, int)) or [1]
+
+        ##  If you want to debug:
+        # print(f"doc_id={doc_id}, pages={pages}")
+
+        # FLOW: Build source entry for this doc
         src_entry: Dict[str, Any] = {
             "document_id": doc_id,
             "title": ref.get("title") or "",
             "published_at": ref.get("published_at") or "",
             "pages": pages,
             "db": "main",
-            # 👇 crucial: pass through for worker's PDF path mapping
             "source_path": ref.get("source_path", ""),
-            # keep some useful metadata around if you need it in prompts/UI
             "company_id": ref.get("company_id"),
             "total_hits": ref.get("total_hits"),
             "name_hits": ref.get("name_hits"),
@@ -926,6 +926,7 @@ def _build_context_blocks(
         sources_for_prompt.append(src_entry)
 
     return context_blocks, sources_for_prompt
+
 
 # =========================================
 # Step 3: Final LLM output and formatting
@@ -1108,7 +1109,19 @@ def markdown_to_html(md: str, link_map: dict | None = None) -> str:
     close_list()
     return "".join(html_out)
 
-def llm_summarize_persona(
+def _priority(src):
+    # sort sources so that multi-page or page>1 docs appear first 
+    pages = src.get("pages") or [src.get("page") or 1]
+    pages = [p for p in pages if isinstance(p, int)]
+
+    # If pages = [1] → lowest priority (push to end)
+    if pages == [1]:
+        return (1, pages)  # 1 = low priority
+
+    # Otherwise → high priority
+    return (0, pages)      # 0 = high priority
+
+def llm_summarise_persona(
     conn,
     context_blocks: List[str],
     user_query: str,
@@ -1120,15 +1133,27 @@ def llm_summarize_persona(
       [S# pPAGE "SHORT QUOTE"] at the END of each bullet.
     Also emits a machine-readable CITATIONS(JSON) block we can parse.
     """
+
+
     # FLOW: Build candidate list for the model (titles + available pages)
+
+    # cand_lines = []
+    # for i, s in enumerate(sources_for_prompt, 1):
+    #     pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
+    #     cand_lines.append(f"{i}. {s['title']} — {pages}")
+    # candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
+    # safe_blocks = context_blocks # _budget_texts(context_blocks)
+    # context_blocks = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
+    # sources_text = "\n\n".join(context_blocks)
+    
+    sorted_sources = sorted(sources_for_prompt, key=_priority)
     cand_lines = []
-    for i, s in enumerate(sources_for_prompt, 1):
+    for i, s in enumerate(sorted_sources, 1):
         pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
         cand_lines.append(f"{i}. {s['title']} — {pages}")
     candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
-
-    safe_blocks = context_blocks # _budget_texts(context_blocks)
-    context_blocks = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
+    safe_blocks = context_blocks
+    context_blocks = database_manager.get_context_chunks_for_sources(conn, sorted_sources)
     sources_text = "\n\n".join(context_blocks)
 
 
@@ -1194,6 +1219,7 @@ def llm_summarize_persona(
         - List ALL cited pages for that source, sorted ascending (e.g. "p.3, p.4, p.9").
         - The trailing quoted text must be ONE of the SHORT QUOTEs you used for that source.
         - All text must be copied exactly from context—no paraphrasing.
+        - WE SHOULD ONLY USE PAGE 1 SOURCES (p1) AS A LAST RESORT. 
 
     GENERAL RULES (CRITICAL):
     - The most important Criteria for choosing sources is THE MOST RECENT, RELEVANT SOURCE.
@@ -1226,7 +1252,7 @@ def llm_summarize_persona(
         temperature=0.2,
     )
     out = (r.choices[0].message.content or "").strip()
-    print(f"query_manager:llm_summarize_persona:DEBUG: llm_response: {out}")
+    print(f"query_manager:llm_summarise_persona:DEBUG: llm_response: {out}")
 
     # FLOW: Split out bullets / CITATIONS(JSON) / Sources 
     lines = out.splitlines()
@@ -1431,7 +1457,7 @@ def build_click_url_from_row(
 # =========================================
 def main(q, top_k, conn):
     print(f"query_manager:main:FLOW: entered overview with q='{q}' top_k={top_k}")
-    top_k = 10
+    top_k = 3
 
 
     # =========================================
@@ -1580,7 +1606,8 @@ def main(q, top_k, conn):
         print("query_manager:main:ERROR: No non-empty context blocks after chunk fetch -> aborting.")
         return
 
-    llm_out = llm_summarize_persona(
+    print(context_blocks)
+    llm_out = llm_summarise_persona(
         conn,
         context_blocks=context_blocks,
         user_query=q,
@@ -1692,7 +1719,6 @@ def _make_ref_for_document(conn, doc_id: int) -> Dict[str, Any]:
     }
     return ref
 
-
 def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
     """
     Expand on a single summary bullet using ONE underlying document.
@@ -1717,11 +1743,11 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
     """
     print(f"query_manager:expand_bullet:FLOW: doc_id={doc_id}, bullet={bullet_text!r}")
 
-    # 1) Build a single ref for this doc (S1)
+    # FLOW: Build a single ref for this doc (S1)
     ref = _make_ref_for_document(conn, int(doc_id))
     refs: List[Dict[str, Any]] = [ref]
 
-    # 2) Build context blocks as usual, but the pool is just this one doc
+    # FLOW: Build context blocks as usual, but the pool is just this one doc
     context_blocks, sources_for_prompt = _build_context_blocks(conn, refs)
     print(
         "query_manager:expand_bullet:DEBUG: context_blocks_nonempty="
@@ -1737,13 +1763,8 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
             "inline_citations": [],
         }
 
-    # 3) Call the SAME LLM pipeline but with a different use_case + query text
-    #
-    #    Inside llm_summarize_persona you can check:
-    #        if use_case == "expand_bullet":  # tweak instructions
-    #            ...
-    #    while still reusing your OUTPUT SPEC + rules.
-    #
+    # FLOW: Call the SAME LLM pipeline but with a different use_case + query text
+    ## TODO:  add in better expand llm prompt for the function llm_summarise_persona 
     expand_query = (
         "Please expand on the following bullet point using ONLY the supplied context. "
         "Investigate the document to find the most relevant sections that explain the "
@@ -1753,7 +1774,7 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
         f"ORIGINAL BULLET:\n{bullet_text}"
     )
 
-    llm_out = llm_summarize_persona(
+    llm_out = llm_summarise_persona(
         conn,
         context_blocks=context_blocks,
         user_query=expand_query,
