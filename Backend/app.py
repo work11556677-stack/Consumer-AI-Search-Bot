@@ -15,7 +15,7 @@ import config
 # -------------------------------------------------
 # APP SETUP
 # -------------------------------------------------
-app = FastAPI(title="pdfint Overview Search")
+app = FastAPI(title="CraigAI")
 
 # CORS (relaxed so you can hit it from anywhere / JS)
 app.add_middleware(

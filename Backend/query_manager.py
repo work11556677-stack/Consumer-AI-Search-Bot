@@ -32,7 +32,7 @@ def append_qa_output(question: str, summary_md: str, citations: list, references
 
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Format Sources Used section (only those actually cited)
+    # FLOW: Format Sources Used section (only those actually cited)
     sources_lines = []
     for ref in references:
         title = ref.get("title", "")
@@ -42,7 +42,7 @@ def append_qa_output(question: str, summary_md: str, citations: list, references
         else:
             pages_str = "p.?"
 
-        # We don't store the quote in references object → fall back to ""
+        # We don't store the quote in references object -> fall back to ""
         quote = ref.get("quote", "").strip()
 
         if quote:
@@ -52,7 +52,7 @@ def append_qa_output(question: str, summary_md: str, citations: list, references
 
     sources_formatted = "\n".join(sources_lines)
 
-    # Build final block
+    # FLOW: Build final block
     block = f"""
     =====================
     {ts}
@@ -71,7 +71,7 @@ def append_qa_output(question: str, summary_md: str, citations: list, references
 
     """.lstrip()
 
-    # Append to file
+    # FLOW: Append to file
     with open(config.OUTPUT_FILE, "a", encoding="utf-8") as f:
         f.write(block)
 
@@ -87,14 +87,14 @@ def parse_sources_from_llm_output(llm_output: str):
     """
     references = []
 
-    # 1. Find the Sources section
+    # FLOW: Find the Sources section
     m = re.search(r"Sources\s*(.+)$", llm_output, flags=re.S | re.I)
     if not m:
         return []
 
     sources_block = m.group(1).strip()
 
-    # 2. Extract each bullet line
+    # FLOW: Extract each bullet line
     lines = [
         ln.strip() for ln in sources_block.splitlines()
         if ln.strip().startswith("- ")
@@ -129,9 +129,7 @@ def parse_sources_from_llm_output(llm_output: str):
 # =========================================
 def classify_use_case(q: str) -> Dict[str, Any]:
     ql = q.lower()
-    # ======================
-    # BASIC HEURISTICS (unchanged)
-    # ======================
+    # FLOW: basic heuristcs 
     company_hit = any(t.lower() in ql for t in config.COMPANY_TERMS)
     macro_hit = any(w in ql for w in [
         "forecast", "outlook", "drivers", "industry", "rate cut", "rate cuts",
@@ -146,9 +144,7 @@ def classify_use_case(q: str) -> Dict[str, Any]:
     else:
         heuristic = None
 
-    # ======================
-    # SYSTEM PROMPT
-    # ======================
+    # FLOW: sys prompt
     system = (
         "You are a retail research classifier.\n\n"
         "You are given a coverage_universe which is a list of company names. "
@@ -170,9 +166,7 @@ def classify_use_case(q: str) -> Dict[str, Any]:
 
 
 
-    # ======================
-    # CALL LLM
-    # ======================
+    # FLOW: call llm
     try:
         r = openai_manager.CLIENT.chat.completions.create(
             model=config.CLASSIFY_MODEL,
@@ -192,14 +186,11 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         conf = js.get("confidence") or 0.5
         reason = (js.get("reason") or "").strip()
 
-        # ====================================================
-        # ENFORCE ROUTING RULE LOCALLY
-        # If a company appears, ALWAYS use_case_1
-        # ====================================================
+        # enforce routing rule: if company appears we always have case 1 
         if company_hit and uc != "use_case_1":
             uc = "use_case_1"
             reason = (reason + " | forced: company detected").strip()
-            js["related_companies"] = []  # override — company-level questions can't have related list
+            js["related_companies"] = []  # override: company-level questions can't have related list
 
         # Guarantee fields exist
         related = js.get("related_companies", [])
@@ -213,9 +204,7 @@ def classify_use_case(q: str) -> Dict[str, Any]:
         related = []
         key_terms = []
 
-    # ======================
-    # Final formatted output
-    # ======================
+    # FLOW: final formatted output
     out = {
         "use_case": uc,
         "confidence": conf,
@@ -231,9 +220,13 @@ def classify_use_case(q: str) -> Dict[str, Any]:
 
 def handle_use_case_1(q, tokens, tickers, conn):
     """
-    Runs the original use_case_1 workflow.
+    We extract the key companies mentioned in the querstoin and find the reports that mention them the most. 
+    If the company is not known, use llm to generate aliases and search datbase. 
+
     Returns: pool, tickers, extra_terms
     """
+
+    # FLOW: extract company from qeury, and resovle into aliases, etc
     cues: List[str] = []
     if tickers: 
         cues.extend(_aliases_for_tickers(tickers))
@@ -250,37 +243,37 @@ def handle_use_case_1(q, tokens, tickers, conn):
 
     print(f"query_manager:handle_use_case_1:DEBUG: cues(len)={len(cues)} sample={cues[:10]}")
 
-
+    # FLOW: from company extraction, retrieve matching docs 
     company_ids = database_manager.resolve_company_ids(conn, cues)
     print(f"query_manager:handle_use_case_1:DEBUG: company_ids: {company_ids}")
 
     if not company_ids and tickers:
         company_ids = database_manager.resolve_company_ids(conn, tickers)
-        print(f"fallback company_ids via tickers={company_ids}")
+        print(f"query_manager:handle_use_case_1:DEBUG: fallback company_ids via tickers={company_ids}")
 
     # Pre-compute non-company terms for ranking (used later regardless of mode)
     company_words = set(w.lower() for w in cues + tickers)
     extra_terms = [t for t in tokens if t and t.lower() not in company_words]
-    print(f"extra_terms={extra_terms}")
+    print(f"query_manager:handle_use_case_1:DEBUG: extra_terms={extra_terms}")
 
-    # =========================================
-    # STEP 1B: If no company found statically → use LLM to determine company
+    # FLOW: 
+    #          If there is valid company_ids (we have a known company e.g. wow, then fetch doc_pool)
+    #          ELSE: If there is no known company found -> use LLM to determine company (e.g temu not in known compnaies, but still case 1 question)
     #          and build a dynamic doc pool at inference time.
-    #          If that also fails (no docs), we RETURN and do not continue.
-    # =========================================
+    #          If that also fails (no docs), RETURN and do not continue.
     if company_ids:
-        # ---- Static path: use precomputed company_term_count
+        # Static path: use precomputed company_term_count
         pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=200)
-        print(f"pool_size={len(pool)} (static company_term_count path)")
+        print(f"query_manager:handle_use_case_1:DEBUG: pool_size={len(pool)} (static company_term_count path)")
     else:
-        # ---- Dynamic path: let LLM pick a company, then scan docs
-        print("No company_ids from static extraction → entering dynamic LLM company path.")
+        # Dynamic path: let llm pick a company, then scan docs
+        print("query_manager:handle_use_case_1:DEBUG: No company_ids from static extraction -> entering dynamic LLM company path.")
         pool = dynamic_company(q, conn, limit_pool=200)
-        print(f"pool_size={len(pool)} (dynamic LLM company path)")
+        print(f"query_manager:handle_use_case_1:DEBUG: pool_size={len(pool)} (dynamic LLM company path)")
 
-        # If dynamic path also fails → abort (no reports to summarise)
+        # If dynamic path also fails -> abort (no reports to summarise)
         if not pool:
-            print("No reports found via static or dynamic company extraction → aborting.")
+            print("query_manager:handle_use_case_1:DEBUG: No reports found via static or dynamic company extraction -> aborting.")
             return  # early exit; caller will see None
 
 
@@ -289,60 +282,53 @@ def handle_use_case_1(q, tokens, tickers, conn):
 def handle_use_case_2(q, tokens, out, conn):
     """
     Hybrid workflow for sector/macro questions:
-    - related companies (tickers)
-    - key_terms
+    Unlike case 1, just using compnaies, 
+        we use the llm to extract both related companies (if any) and key terms, and we search the datbase for reports containing them. 
+
     Always returns: pool, tickers, extra_terms
     """
 
     related_companies = out["related_companies"]
     key_terms = out["key_terms"]
 
-    # 1. Convert related company names → tickers
+    # FLOW: Convert related company names -> tickers
     tickers = [
         ticker
         for ticker, name in config.ASX_COMPANIES.items()
         if name in related_companies
     ]
 
-    print(f"[UC2] tickers={tickers}, key_terms={key_terms}")
+    print(f"query_manager:handle_use_case_2:DEBUG: tickers={tickers}, key_terms={key_terms}")
 
-    # ------------------------------------------------------
-    # Build cues only from ticker aliases (not keywords)
-    # ------------------------------------------------------
+    # FLOW: Build cues only from ticker aliases (not keywords)
     cues = []
     if tickers:
         cues.extend(_aliases_for_tickers(tickers))
 
-    # ------------------------------------------------------
-    # Resolve company_ids (optional)
-    # ------------------------------------------------------
+    # FLOW: Resolve company_ids 
     company_ids = []
     if tickers:
         company_ids = database_manager.resolve_company_ids(conn, tickers)
-        print(f"[UC2] company_ids={company_ids}")
+        print(f"query_manager:handle_use_case_2:DEBUG: company_ids={company_ids}")
 
-    # ------------------------------------------------------
-    # Build initial candidate pool
-    # ------------------------------------------------------
+    # FLOW: Build initial candidate pool
+    #       using company ids, and also getting all docs for keyword matching to query case 2 terms
     if company_ids:
         pool = database_manager.fetch_doc_pool(conn, company_ids, limit_pool=500)
-        print(f"[UC2] pool_size={len(pool)} (filtered by company)")
+        print(f"query_manager:handle_use_case_2:DEBUG: pool_size={len(pool)} (filtered by company)")
     else:
         pool = database_manager.fetch_all_docs(conn, limit_pool=2000)
-        print(f"[UC2] pool_size={len(pool)} (full corpus)")
+        print(f"query_manager:handle_use_case_2:DEBUG: pool_size={len(pool)} (full corpus)")
 
     if not pool:
-        print("[UC2] Empty pool → dynamic fallback")
+        print("query_manager:handle_use_case_2:DEBUG: Empty pool -> dynamic fallback")
         pool = dynamic_company(q, conn, limit_pool=500)
 
     if not pool:
-        print("[UC2] No docs found → abort")
+        print("query_manager:handle_use_case_2:DEBUG: docs found -> abort")
         return None, None, None
 
-    # ------------------------------------------------------
     # Build extra_terms (tokens minus company words)
-    # then merge key_terms
-    # ------------------------------------------------------
     company_words = set(w.lower() for w in cues + tickers)
     extra_terms = [t for t in tokens if t and t.lower() not in company_words]
 
@@ -350,11 +336,9 @@ def handle_use_case_2(q, tokens, out, conn):
         if kt not in extra_terms:
             extra_terms.append(kt)
 
-    print(f"[UC2] extra_terms={extra_terms}")
+    print(f"query_manager:handle_use_case_2:DEBUG: extra_terms={extra_terms}")
 
-    # ------------------------------------------------------
-    # KEYWORD SCORING
-    # ------------------------------------------------------
+    # FLOW: Keyword Sorting 
     if extra_terms:
         def term_score(text, terms):
             t = text.lower()
@@ -468,7 +452,7 @@ def llm_determine_company(user_query: str) -> Optional[Dict[str, Any]]:
     )
     raw = (resp.choices[0].message.content or "").strip()
 
-    # If model wrapped JSON in ```json``` etc., extract the object
+    # wrapped JSON 
     m = re.search(r"\{.*\}", raw, flags=re.S)
     if m:
         raw = m.group(0)
@@ -476,7 +460,7 @@ def llm_determine_company(user_query: str) -> Optional[Dict[str, Any]]:
     try:
         data = json.loads(raw)
     except Exception as e:
-        print(f"llm_determine_company: JSON parse error: {e} raw={raw[:200]!r}")
+        print(f"query_manager:llm_determine_company:DEBUG: JSON parse error: {e} raw={raw[:200]!r}")
         return None
 
     company_name = (data.get("company_name") or "").strip() if data.get("company_name") else ""
@@ -484,7 +468,7 @@ def llm_determine_company(user_query: str) -> Optional[Dict[str, Any]]:
     aliases_raw = data.get("aliases", []) or []
 
     if not company_name and not short_name:
-        print("llm_determine_company: model returned no company (both fields empty/null).")
+        print("query_manager:llm_determine_company:DEBUG: model returned no company (both fields empty/null).")
         return None
 
     aliases: List[str] = []
@@ -499,7 +483,7 @@ def llm_determine_company(user_query: str) -> Optional[Dict[str, Any]]:
         aliases.insert(0, short_name)
 
     print(
-        f"llm_determine_company: company_name={company_name!r}, "
+        f"query_manager:llm_determine_company:DEBUG: company_name={company_name!r}, "
         f"short_name={short_name!r}, aliases={aliases}"
     )
 
@@ -540,7 +524,7 @@ def dynamic_company(
     """
     info = llm_determine_company(user_query)
     if not info:
-        print("dynamic_company: LLM could not confidently identify any company from query.")
+        print("query_manager:dynamic_company:DEBUG: LLM could not confidently identify any company from query.")
         return []
 
     company_name = (info.get("company_name") or "").strip()
@@ -593,11 +577,11 @@ def dynamic_company(
         doc_ids = [int(r["document_id"]) for r in cur.fetchall()]
         cur.close()
     except Exception as e:
-        print(f"dynamic_company: failed to list document ids: {e}")
+        print(f"query_manager:dynamic_company:DEBUG: failed to list document ids: {e}")
         return []
 
     print(
-        f"dynamic_company: scanning {len(doc_ids)} docs for "
+        f"query_manager:dynamic_company:DEBUG: scanning {len(doc_ids)} docs for "
         f"company_name={company_name!r}, short_name={short_name!r}"
     )
 
@@ -634,7 +618,7 @@ def dynamic_company(
         )
 
     if not hit_rows:
-        print("dynamic_company: no docs with any hits for this off-book company.")
+        print("query_manager:dynamic_company:DEBUG: no docs with any hits for this off-book company.")
         return []
 
     # Sort by relevance: total_hits desc, then document_id desc
@@ -657,9 +641,7 @@ def dynamic_company(
             dmeta = cur.fetchone()
             cur.close()
         except Exception as e:
-            print(
-                f"dynamic_company: failed to fetch document meta for {did}: {e}"
-            )
+            print(f"query_manager:dynamic_company:DEBUG: failed to fetch document meta for {did}: {e}")
             dmeta = None
 
         title = ""
@@ -701,7 +683,7 @@ def dynamic_company(
             }
         )
 
-    print(f"dynamic_company: built dynamic off-book pool size={len(pool)}")
+    print(f"query_manager:dynamic_company:DEBUG: built dynamic off-book pool size={len(pool)}")
     return pool
 
 
@@ -736,7 +718,7 @@ def get_doc_path_date(conn, document_id):
 
     yymmdd = m.group(1)
 
-    # Interpret YYMMDD → datetime
+    # Interpret YYMMDD -> datetime
     try:
         # 20xx assumption
         full_date = datetime.strptime("20" + yymmdd, "%Y%m%d")
@@ -799,7 +781,7 @@ def _derive_doc_fields(row):
 def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list[dict]:
     """
     Return rows with unified keys: page:int, chunk_index:int, text:str
-    Tries multiple table/column layouts seen in your DBs.
+    Tries multiple table/column to accomodate my past DB schemas.
     """
     candidates = [
        # (table,           text_col,        page_col,         idx_col)
@@ -839,12 +821,12 @@ def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list
                     ci = int(r["chunk_index"] or 0)
                     out.append({"page": pg, "chunk_index": ci, "text": t})
                 if out:
-                    print(f"_fetch_doc_chunks_robust: hit table={table} text={text_c} page={page_c} idx={idx_c} -> {len(out)} chunks")
+                    print(f"query_manager:_fetch_doc_chunks_robust:DEBUG: hit table={table} text={text_c} page={page_c} idx={idx_c} -> {len(out)} chunks")
                     return out
             except Exception as e:
-                print(f"_fetch_doc_chunks_robust: failed on {table} ({text_c},{page_c},{idx_c}): {e}")
+                print(f"query_manager:_fetch_doc_chunks_robust:DEBUG: failed on {table} ({text_c},{page_c},{idx_c}): {e}")
                 continue
-    print("_fetch_doc_chunks_robust: no layouts matched; returning []")
+    print("query_manager:_fetch_doc_chunks_robust:DEBUG: no layouts matched; returning []")
     return []
 
 def _build_context_blocks(conn: sqlite3.Connection, picked_docs: list[dict]):
@@ -910,7 +892,7 @@ def _bullets_to_html(md_text: str) -> str:
 def build_doc_link_from_meta(meta_json: str, page: int | None = None) -> str | None:
     """
     Build a /file/... URL from document.meta JSON.
-    - DOCX absolute_path → prefer sibling PDF (same base name)
+    - DOCX absolute_path -> prefer sibling PDF (same base name)
     - If that PDF doesn't exist, try an "MST " + filename variant.
     - Returns a URL under our mounted static routes (/file/Docx_Retail or /file/Chart_Packs)
     """
@@ -934,7 +916,7 @@ def build_doc_link_from_meta(meta_json: str, page: int | None = None) -> str | N
     else:
         return None
 
-    # ensure .pdf (docx→pdf)
+    # ensure .pdf (docx->pdf)
     base_no_ext, _ = os.path.splitext(rel_after_root)
     candidate_rel = base_no_ext + ".pdf"
 
@@ -967,13 +949,13 @@ def _link_for_citation(sources: list[dict], S: int, page: int, quote: str) -> st
         src = sources[S - 1]
         q = urlquote((quote or "")[:120])
 
-        # 1) Section-first (context view)
+        # FLOW: Section-first (context view)
         ctx = src.get("context_url")
         if ctx:
             join = "&" if "?" in ctx else "?"
             return f"{ctx}{join}view=html&page={int(page)}&quote={q}"
 
-        # 2) Fallback: PDF page + search
+        # FLOW: Fallback: PDF page + search
         url = src.get("url") or build_doc_link_from_meta(src.get("meta", "{}"), page)
         if not url:
             return ""
@@ -1089,7 +1071,7 @@ def llm_summarize_persona(
       [S# pPAGE "SHORT QUOTE"] at the END of each bullet.
     Also emits a machine-readable CITATIONS(JSON) block we can parse.
     """
-    # Build candidate list for the model (titles + available pages)
+    # FLOW: Build candidate list for the model (titles + available pages)
     cand_lines = []
     for i, s in enumerate(sources_for_prompt, 1):
         pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
@@ -1174,6 +1156,7 @@ def llm_summarize_persona(
     - If you cannot find a valid 6–12 word quote, you may NOT make the claim.
     - You may skip bullets entirely if the source text is too thin.
     - Precision over breadth: fewer correct bullets > more speculative content.
+    - Use Australian-English spelling and syntax pelase. 
     """
 
 
@@ -1196,7 +1179,7 @@ def llm_summarize_persona(
     out = (r.choices[0].message.content or "").strip()
     print(f"query_manager:llm_summarize_persona:DEBUG: llm_response: {out}")
 
-    # ---- Split out bullets / CITATIONS(JSON) / Sources ----
+    # FLOW: Split out bullets / CITATIONS(JSON) / Sources 
     lines = out.splitlines()
     bullets, sources_lines = [], []
     in_sources = False
@@ -1217,7 +1200,8 @@ def llm_summarize_persona(
     bullets_md = "\n".join(bullets[:3]).rstrip()
     sources_md = "\n".join(sources_lines).strip()
 
-    # ---- Parse the CITATIONS(JSON) array ----
+    # FLOW: Format 
+    # Parse the CITATIONS(JSON) array 
     m = re.search(r"CITATIONS\(JSON\)\s*(\[.*?\])", out, flags=re.S | re.I)
     citations_json = []
     if m:
@@ -1226,10 +1210,10 @@ def llm_summarize_persona(
         except Exception:
             citations_json = []
 
-    # ---- Build HTML with live, clickable [S# pN] anchors ----
+    # Build HTML with live, clickable [S# pN] anchors 
     bullets_html = _html_with_clickable_citations(bullets_md, sources_for_prompt)
 
-    # ---- Link 'Sources' titles to the first cited page for that source ----
+    # Link 'Sources' titles to the first cited page for that source 
     link_map = {}
     for i, s in enumerate(sources_for_prompt, 1):
         # First cited page for S=i in the JSON, else the first page from pages list
@@ -1245,7 +1229,7 @@ def llm_summarize_persona(
 
     summary_html = bullets_html + (sources_html if sources_html else "")
 
-    # Keep your existing “references” extraction for compatibility
+    # Keep existing “references” extraction for compatibility
     references = []
     for ln in sources_lines:
         m2 = re.match(r"[-*•]\s*(.+?)\s*[—-]\s*p\.(.+)\s*$", ln, flags=re.I)
@@ -1267,12 +1251,12 @@ def llm_summarize_persona(
         "summary_md": summary_md,
         "summary_html": summary_html,
         "references": references,
-        "citations": citations_json,  # NEW: machine-readable mapping
+        "citations": citations_json,
         "out": out,
     }
 
 def prefer_pdf_path(p: Path | None) -> Path | None:
-    """Swap .docx → .pdf; leave others as-is."""
+    """Swap .docx -> .pdf; leave others as-is."""
     if p is None:
         return None
     return p.with_suffix(".pdf") if p.suffix.lower() == ".docx" else p
@@ -1349,17 +1333,15 @@ def build_click_url_from_row(
     conn: sqlite3.Connection,
     default_page: int = 1
 ) -> str:
-
-
     """
     Prefer a direct /media/docx URL mapped from meta.absolute_path (or file_uri),
     adding #page=N. If mapping isn't possible, fall back to /view/{db}/{id}?page=N.
 
     Requires:
-      - db()            -> sqlite connection (already defined in your app)
-      - fetchone(...)   -> helper to run a single-row query (already defined)
+      - db()            -> sqlite connection
+      - fetchone(...)   -> helper to run a single-row query
       - abs_path_to_media_docx_url(abs_path, page=None) -> maps absolute path
-        under your 'Docx Retail' tree to /media/docx/... and appends #page.
+        under 'Docx Retail' tree to /media/docx/... and appends #page.
     """
     try:
         row = database_manager.fetchone(conn,
@@ -1367,7 +1349,7 @@ def build_click_url_from_row(
             (document_id,)
         )
         if not row:
-            # Fallback straight to viewer if row missing (shouldn't happen)
+            # Fallback straight to viewer if row missing (should not happen ..... hopefully lol)
             return f"/view/{db_label}/{document_id}?page={int(default_page or 1)}"
 
         # Extract absolute path preference from meta; fall back to file_uri
@@ -1434,7 +1416,7 @@ def main(q, top_k, conn):
     if use_case == "use_case_2":
         pool, tickers, extra_terms = handle_use_case_2(q, tokens, out, conn)
     if not pool:
-        print(f"query_manager:main:ERROR: No pool returned → abort : pool: {pool}, tickers: {tickers}, extra_terms: {extra_terms}")
+        print(f"query_manager:main:ERROR: No pool returned -> abort : pool: {pool}, tickers: {tickers}, extra_terms: {extra_terms}")
         return
 
 
@@ -1463,7 +1445,7 @@ def main(q, top_k, conn):
     ranked = pool
 
     if use_case == "use_case_2" and not tickers:
-        print("query_manager:main:DEBUG: [RANK] use_case_2 + no tickers → sorting by lowest total_hits then path_date DESC")
+        print("query_manager:main:DEBUG: [RANK] use_case_2 + no tickers -> sorting by lowest total_hits then path_date DESC")
 
         ranked = sorted(
             pool,
@@ -1523,7 +1505,7 @@ def main(q, top_k, conn):
 
     # Safety: if for some reason chunks are totally empty, just bail
     if not any(b.strip() for b in context_blocks):
-        print("query_manager:main:ERROR: No non-empty context blocks after chunk fetch → aborting.")
+        print("query_manager:main:ERROR: No non-empty context blocks after chunk fetch -> aborting.")
         return
 
     llm_out = llm_summarize_persona(
