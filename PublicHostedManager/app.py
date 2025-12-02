@@ -3,11 +3,16 @@ from __future__ import annotations
 import threading
 import uuid
 from typing import Any, Dict
-
+import os
+from flask import send_file
+from werkzeug.utils import secure_filename
 from flask import Flask, jsonify, request, Response
 
 app = Flask(__name__)
 
+
+PDF_TMP_DIR = "/tmp/craigai_pdfs"
+os.makedirs(PDF_TMP_DIR, exist_ok=True)
 
 
 jobs_lock = threading.Lock()
@@ -30,17 +35,29 @@ HTML_INDEX = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Overview Search</title>
+  <title>Ask CrAIg</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
+      --color-navy: #00205C;      /* rgb(0,32,92) */
+      --color-teal: #62CBC9;      /* rgb(98,203,201) */
+      --color-warm-grey: #C5B8AC; /* rgb(197,184,172) */
+
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background-color: #0f172a;
-      color: #e5e7eb;
+      background-color: var(--color-navy);
+      color: #111827;
+    }
+    * {
+      box-sizing: border-box;
     }
     body {
       margin: 0;
       padding: 0;
+      background:
+        radial-gradient(circle at top left, rgba(98,203,201,0.15), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(197,184,172,0.12), transparent 55%),
+        var(--color-navy);
+      color: #111827;
     }
     .page {
       min-height: 100vh;
@@ -52,28 +69,46 @@ HTML_INDEX = """<!DOCTYPE html>
     .card {
       width: 100%;
       max-width: 1000px;
-      background: #020617;
-      border-radius: 16px;
+      background: #ffffff;
+      border-radius: 20px;
       padding: 24px 28px;
-      box-shadow: 0 18px 45px rgba(0,0,0,0.65);
-      border: 1px solid #1e293b;
+      box-shadow:
+        0 18px 40px rgba(0,0,0,0.35),
+        0 0 0 1px rgba(15,23,42,0.08);
+      border: 1px solid rgba(148,163,184,0.4);
+      color: #111827;
     }
     h1 {
       margin: 0 0 0.35rem 0;
-      font-size: 1.5rem;
-      letter-spacing: 0.03em;
+      font-size: 1.7rem;
+      letter-spacing: 0.04em;
+      text-transform: none;
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+    }
+    h1 span.logo-pill {
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      border: 1px solid var(--color-teal);
+      color: #111827;
+      background: rgba(98,203,201,0.12);
+      white-space: nowrap;
     }
     .subtitle {
       margin-bottom: 1.5rem;
-      font-size: 0.9rem;
-      color: #9ca3af;
+      font-size: 0.92rem;
+      color: #4B5563;
     }
     form {
       display: flex;
       flex-wrap: wrap;
       gap: 0.75rem;
       margin-bottom: 1rem;
-      align-items: center;
+      align-items: flex-end;
     }
     .field-group {
       flex: 1 1 260px;
@@ -83,61 +118,82 @@ HTML_INDEX = """<!DOCTYPE html>
     }
     label {
       font-size: 0.8rem;
-      color: #9ca3af;
+      color: #6B7280;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
     }
     input[type="text"] {
-      border-radius: 999px;
-      border: 1px solid #1f2937;
-      background-color: #020617;
-      color: #e5e7eb;
-      padding: 0.55rem 0.9rem;
+      border-radius: 12px;
+      border: 2px solid var(--color-teal);
+      background-color: #ffffff;
+      color: #111827;
+      padding: 0.6rem 0.8rem;
       font-size: 0.9rem;
       outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    input[type="text"]::placeholder {
+      color: #9CA3AF;
     }
     input[type="text"]:focus {
-      border-color: #4b5563;
-      box-shadow: 0 0 0 1px #4b5563;
+      border-color: var(--color-teal);
+      box-shadow: 0 0 0 2px rgba(98,203,201,0.35);
     }
     button {
       border: none;
       border-radius: 999px;
-      padding: 0.65rem 1.4rem;
+      padding: 0.65rem 1.6rem;
       font-size: 0.9rem;
       font-weight: 500;
       cursor: pointer;
-      background: #e5e7eb;
-      color: #020617;
+      background: var(--color-teal);
+      color: #111827;
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
+      gap: 0.4rem;
       white-space: nowrap;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+    }
+    button::after {
+      content: "↵";
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(0,0,0,0.3);
+      filter: brightness(1.03);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(0);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+      filter: brightness(0.98);
     }
     button:disabled {
       opacity: 0.6;
       cursor: default;
+      box-shadow: none;
     }
     .status {
       margin-bottom: 0.5rem;
       min-height: 1.25rem;
       font-size: 0.8rem;
-      color: #9ca3af;
+      color: #6B7280;
     }
 
+    /* Containers for result sections – no outer box, just three white boxes */
     .results {
-      border-radius: 12px;
-      background: #020617;
-      border: 1px solid #111827;
-      padding: 0.9rem 1rem;
-      font-size: 0.85rem;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      margin-top: 0.5rem;
     }
     .results-section {
-      border-radius: 8px;
-      padding: 0.5rem 0.75rem;
-      background: rgba(15,23,42,0.8);
-      border: 1px solid #1f2937;
+      border-radius: 14px;
+      padding: 0.7rem 0.85rem;
+      background: #ffffff;
+      border: 2px solid var(--color-teal);
     }
     .results-header {
       display: flex;
@@ -145,8 +201,8 @@ HTML_INDEX = """<!DOCTYPE html>
       align-items: center;
       font-size: 0.8rem;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #9ca3af;
+      letter-spacing: 0.12em;
+      color: #6B7280;
       margin-bottom: 0.35rem;
     }
     .results-header span {
@@ -157,33 +213,45 @@ HTML_INDEX = """<!DOCTYPE html>
       padding: 0;
     }
     .summary-content li {
-      margin-bottom: 0.2rem;
+      margin-bottom: 0.25rem;
+      line-height: 1.45;
+      color: #111827;
     }
     .pill {
       border-radius: 999px;
-      padding: 0.15rem 0.6rem;
-      border: 1px solid #374151;
+      padding: 0.2rem 0.7rem;
+      border: 1px solid rgba(148,163,184,0.5);
       font-size: 0.7rem;
-      color: #9ca3af;
+      color: #4B5563;
+      background: #F9FAFB;
     }
     .source-item, .citation-item {
-      margin-bottom: 0.15rem;
-      line-height: 1.4;
+      margin-bottom: 0.2rem;
+      line-height: 1.45;
+      color: #111827;
     }
     .source-title {
       font-weight: 500;
-      color: #e5e7eb;
     }
     .source-meta {
       font-size: 0.75rem;
-      color: #9ca3af;
+      color: #6B7280;
+    }
+    .source-meta a {
+      color: #111827;
+      text-decoration: underline;
+      text-decoration-color: var(--color-teal);
+      text-underline-offset: 2px;
+    }
+    .source-meta a:hover {
+      text-decoration-thickness: 2px;
     }
     .raw-json-toggle {
       font-size: 0.75rem;
-      color: #9ca3af;
+      color: #6B7280;
       cursor: pointer;
       text-decoration: underline;
-      margin-top: 0.25rem;
+      text-underline-offset: 2px;
     }
     .raw-json {
       margin-top: 0.3rem;
@@ -192,30 +260,55 @@ HTML_INDEX = """<!DOCTYPE html>
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 0.75rem;
       line-height: 1.35;
-      background: #020617;
+      background: #F9FAFB;
       border-radius: 8px;
       padding: 0.5rem 0.75rem;
-      border: 1px solid #111827;
+      border: 1px solid rgba(148,163,184,0.6);
       white-space: pre;
+      color: #111827;
+    }
+
+    /* Inline citation pill in the summary text */
+    .citation-pill {
+      display: inline-block;
+      margin-left: 0.45rem;
+      margin-top: 0.1rem;
+      padding: 0.12rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--color-teal);
+      background: #E6FBFA;
+      font-size: 0.75rem;
+      color: #111827;
+      white-space: nowrap;
+    }
+    .citation-pill a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .citation-pill a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
   <div class="page">
     <div class="card">
-      <h1>Overview Search</h1>
+      <h1>
+        CrAIg
+        <span class="logo-pill">Retail and Consumer Discretionary Report Copilot</span>
+      </h1>
       <div class="subtitle">
-        Ask a question!
+        Ask a question! CrAIg finds the right reports, summarises the key points and links you straight to the evidence.
       </div>
       <form id="search-form">
         <div class="field-group">
           <label for="query">Question</label>
-          <input id="query" type="text" placeholder="e.g. JBH outlook on gross margins" required />
+          <input id="query" type="text" placeholder="e.g. BRG: FY26e sales growth drivers and regional mix" required />
         </div>
         <div>
           <label style="visibility:hidden;">Search</label>
           <button type="submit" id="submit-btn">
-            Run search
+            Ask CrAIg
           </button>
         </div>
       </form>
@@ -279,7 +372,7 @@ HTML_INDEX = """<!DOCTYPE html>
     const jsonToggleEl = document.getElementById("json-toggle");
 
     function escapeHtml(str) {
-        return String(str)
+      return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -288,141 +381,221 @@ HTML_INDEX = """<!DOCTYPE html>
     }
 
     function renderResult(data) {
-        if (data.summary_html) {
-        summaryContentEl.innerHTML = data.summary_html;
-        } else if (data.summary) {
-        summaryContentEl.innerHTML = "<pre>" + escapeHtml(data.summary) + "</pre>";
-        } else {
+      const sources = Array.isArray(data.sources) ? data.sources : [];
+      const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
+      const summary = data.summary || "";
+
+      // ===== 1) Build summary HTML ourselves from `summary` + citations =====
+      if (summary) {
+        const lines = summary.split("\\n").filter(line => line.trim().length > 0);
+        const itemsHtml = lines.map((line, idx) => {
+          const bulletNum = idx + 1;
+
+          let text = line.replace(/^\\s*-\\s*/, "");
+          text = text.replace(/\\[S\\d+\\s+p\\d+[^\\]]*\\]/g, "");
+          text = text.trim();
+
+          const citsForBullet = citations.filter(c => c.bullet === bulletNum);
+
+          const pillsHtml = citsForBullet.map(c => {
+            const sVal = c.S;
+            const pageNum = c.page;
+            const quoteText = c.quote || "";
+
+            let href = null;
+            if (Number.isInteger(sVal) && sVal >= 1 && sVal <= sources.length) {
+              const src = sources[sVal - 1];
+              if (src && src.url) {
+                href = src.url;
+                const params = [];
+                if (pageNum != null) params.push("page=" + encodeURIComponent(pageNum));
+                if (quoteText) params.push("quote=" + encodeURIComponent(quoteText));
+                if (params.length > 0) {
+                  href += (href.includes("?") ? "&" : "?") + params.join("&");
+                }
+              }
+            }
+
+            const safeQuote = escapeHtml(quoteText);
+            const labelParts = [];
+            if (safeQuote) {
+              labelParts.push("“" + safeQuote + "”");
+            }
+            if (sVal != null) {
+              let refLabel = "S" + sVal;
+              if (pageNum != null) refLabel += ", p" + pageNum;
+              labelParts.push(refLabel);
+            }
+            const label = labelParts.join(" - ");
+
+            if (href) {
+              return ' <span class="citation-pill"><a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a></span>';
+            } else {
+              return ' <span class="citation-pill">' + label + '</span>';
+            }
+          }).join("");
+
+          return "<li>" + escapeHtml(text) + pillsHtml + "</li>";
+        }).join("");
+
+        summaryContentEl.innerHTML = "<ul>" + itemsHtml + "</ul>";
+      } else {
         summaryContentEl.innerHTML = "<em>No summary returned.</em>";
-        }
+      }
 
-        const sources = Array.isArray(data.sources) ? data.sources : [];
-        sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
+      // ===== 2) SOURCES section =====
+      sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
 
-        if (sources.length === 0) {
+      if (sources.length === 0) {
         sourcesListEl.innerHTML = "<em>No sources.</em>";
-        } else {
+      } else {
         sourcesListEl.innerHTML = sources.map((src, idx) => {
-            const sLabel = "S" + (idx + 1);
-            const pages = Array.isArray(src.pages) ? src.pages.join(", ") : "";
-            const title = src.title || "(untitled)";
-            const docId = src.document_id != null ? src.document_id : "?";
-            return (
+          const sLabel = "S" + (idx + 1);
+          const pages = Array.isArray(src.pages) ? src.pages.join(", ") : "";
+          const title = src.title || "(untitled)";
+          const docId = src.document_id != null ? src.document_id : "?";
+          const url = src.url;
+
+          const linkHtml = url
+            ? ' · <a href="' + url + '" target="_blank" rel="noopener noreferrer">Open PDF</a>'
+            : "";
+
+          return (
             '<div class="source-item">' +
-                '<div class="source-title">' + sLabel + " – " + escapeHtml(title) + "</div>" +
-                '<div class="source-meta">document_id ' + docId + " · pages " + escapeHtml(pages) + "</div>" +
+              '<div class="source-title">' + sLabel + " – " + escapeHtml(title) + "</div>" +
+              '<div class="source-meta">document_id ' + docId +
+                " · pages " + escapeHtml(pages) +
+                linkHtml +
+              "</div>" +
             "</div>"
-            );
+          );
         }).join("");
-        }
+      }
 
-        const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
-        citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
+      // ===== 3) INLINE CITATIONS list (sidebar) =====
+      citationsCountEl.textContent = citations.length + (citations.length === 1 ? " ref" : " refs");
 
-        if (citations.length === 0) {
-        citationsListEl.innerHTML = "<em>No inline citations.</em>";
-        } else {
+      if (citations.length === 0) {
+        citationsListEl.innerHTML = "<em>No inline citations yet.</em>";
+      } else {
         citationsListEl.innerHTML = citations.map((c) => {
-            const bullet = c.bullet ?? "?";
-            const s = c.S != null ? "S" + c.S : "?";
-            const page = c.page != null ? "p" + c.page : "?";
-            const quote = c.quote ? ' – “' + escapeHtml(c.quote) + '”' : "";
-            return (
-            '<div class="citation-item">' +
-                "• Bullet " + bullet + " → " + s + " " + page + quote +
-            "</div>"
-            );
-        }).join("");
-        }
+          const bullet = c.bullet ?? "?";
+          const sIndex = (typeof c.S === "number") ? c.S - 1 : null;
+          const pageNum = c.page;
+          const quoteText = c.quote || "";
 
-        rawJsonEl.textContent = JSON.stringify(data, null, 2);
+          const sLabel = c.S != null ? "S" + c.S : "?";
+          const pageLabel = pageNum != null ? "p" + pageNum : "?";
+          const text =
+            "• Bullet " + bullet + " → " + sLabel + " " + pageLabel +
+            (quoteText ? ' – “' + escapeHtml(quoteText) + '”' : "");
+
+          let href = null;
+          if (sIndex != null && sIndex >= 0 && sIndex < sources.length && sources[sIndex].url) {
+            href = sources[sIndex].url;
+            const params = [];
+            if (pageNum != null) params.push("page=" + encodeURIComponent(pageNum));
+            if (quoteText) params.push("quote=" + encodeURIComponent(quoteText));
+            if (params.length > 0) {
+              href += (href.includes("?") ? "&" : "?") + params.join("&");
+            }
+          }
+
+          if (href) {
+            return (
+              '<div class="citation-item">' +
+                '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' +
+                  text +
+                '</a>' +
+              '</div>'
+            );
+          } else {
+            return '<div class="citation-item">' + text + '</div>';
+          }
+        }).join("");
+      }
+
+      // ===== 4) Raw JSON debug =====
+      rawJsonEl.textContent = JSON.stringify(data, null, 2);
     }
 
     async function pollJob(jobId) {
-        summaryPillEl.textContent = "Waiting for backend…";
-        while (true) {
-        try {
-            const resp = await fetch(`/api/job/${jobId}`);
-            if (!resp.ok) {
-            const text = await resp.text();
-            statusEl.textContent = "Error: " + text;
-            submitBtn.disabled = false;        // ✅ allow new queries
-            break;
-            }
-            const job = await resp.json();
+      summaryPillEl.textContent = "Waiting for backend…";
+      while (true) {
+        const resp = await fetch("/api/job/" + jobId);
+        if (!resp.ok) {
+          const text = await resp.text();
+          statusEl.textContent = "Error: " + text;
+          break;
+        }
+        const job = await resp.json();
 
-            if (job.status === "done") {
-            statusEl.textContent = "Done.";
-            summaryPillEl.textContent = "Completed";
-            renderResult(job.result || {});
-            submitBtn.disabled = false;        // ✅ re-enable button
-            break;
-            } else if (job.status === "pending" || job.status === "processing") {
-            statusEl.textContent = "Processing on backend…";
-            await new Promise(r => setTimeout(r, 2000));
-            } else {
-            statusEl.textContent = "Error: unexpected status " + job.status;
-            submitBtn.disabled = false;        // ✅ re-enable on weird state
-            break;
-            }
-        } catch (err) {
-            console.error(err);
-            statusEl.textContent = "Error: " + (err?.message || String(err));
-            submitBtn.disabled = false;          // ✅ re-enable on network error
-            break;
+        if (job.status === "done") {
+          statusEl.textContent = "Done.";
+          summaryPillEl.textContent = "Completed";
+          renderResult(job.result || {});
+          submitBtn.disabled = false;
+          break;
+        } else if (job.status === "pending" || job.status === "processing") {
+          statusEl.textContent = "Processing on backend…";
+          await new Promise(r => setTimeout(r, 2000));
+        } else {
+          statusEl.textContent = "Error: unexpected status " + job.status;
+          submitBtn.disabled = false;
+          break;
         }
-        }
+      }
     }
 
     async function runSearch(event) {
-        event.preventDefault();
+      event.preventDefault();
 
-        const q = queryInput.value.trim();
-        if (!q) return;
+      const q = queryInput.value.trim();
+      if (!q) return;
 
-        statusEl.textContent = "Submitting job…";
-        submitBtn.disabled = true;               // lock while this query runs
-        summaryPillEl.textContent = "Queued";
+      statusEl.textContent = "Submitting job…";
+      submitBtn.disabled = true;
+      summaryPillEl.textContent = "Queued";
 
-        try {
+      try {
         const resp = await fetch("/api/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ q, top_k: 5 })
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q: q, top_k: 5 })
         });
 
         if (!resp.ok) {
-            const text = await resp.text();
-            throw new Error(`HTTP ${resp.status}: ${text}`);
+          const text = await resp.text();
+          throw new Error("HTTP " + resp.status + ": " + text);
         }
 
         const data = await resp.json();
         const jobId = data.job_id;
         if (!jobId) {
-            throw new Error("No job_id returned");
+          throw new Error("No job_id returned");
         }
 
         statusEl.textContent = "Job submitted. Waiting for result…";
-        pollJob(jobId);                        // pollJob will re-enable the button
-        } catch (err) {
+        pollJob(jobId);
+      } catch (err) {
         console.error(err);
-        statusEl.textContent = "Error: " + (err?.message || String(err));
-        submitBtn.disabled = false;           // re-enable on submit error
-        }
+        statusEl.textContent = "Error: " + (err && err.message ? err.message : String(err));
+        submitBtn.disabled = false;
+      }
     }
 
     form.addEventListener("submit", runSearch);
 
     jsonToggleEl.addEventListener("click", () => {
-        const isHidden = rawJsonEl.style.display === "none";
-        rawJsonEl.style.display = isHidden ? "block" : "none";
-        jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
+      const isHidden = rawJsonEl.style.display === "none";
+      rawJsonEl.style.display = isHidden ? "block" : "none";
+      jsonToggleEl.textContent = isHidden ? "Hide raw payload" : "Show raw payload";
     });
-    </script>
-
+  </script>
 </body>
 </html>
 """
+
 
 # -------------------------------------------------
 # ROUTES
@@ -494,6 +667,52 @@ def admin_next_job():
                 )
 
     return jsonify({"id": None, "status": "idle"})
+
+@app.route("/api/admin/job/<job_id>/upload_pdf", methods=["POST"])
+def admin_upload_pdf(job_id: str):
+    api_key = request.args.get("api_key")
+    if api_key != ADMIN_API_KEY:
+        return jsonify({"detail": "Invalid API key"}), 401
+
+    doc_id = request.args.get("doc_id")
+    if not doc_id:
+        return jsonify({"detail": "Missing doc_id"}), 400
+
+    if "file" not in request.files:
+        return jsonify({"detail": "Missing file"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"detail": "Empty filename"}), 400
+
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"detail": "Job not found"}), 404
+
+        safe_name = secure_filename(f"{job_id}_{doc_id}.pdf")
+        save_path = os.path.join(PDF_TMP_DIR, safe_name)
+        file.save(save_path)
+
+        pdf_paths = job.setdefault("pdf_paths", {})
+        pdf_paths[str(doc_id)] = save_path
+
+    return jsonify({"ok": True})
+
+@app.route("/pdf/<job_id>/<doc_id>", methods=["GET"])
+def serve_pdf(job_id: str, doc_id: str):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"detail": "Job not found"}), 404
+
+        pdf_paths = job.get("pdf_paths") or {}
+        path = pdf_paths.get(str(doc_id))
+
+    if not path or not os.path.exists(path):
+        return jsonify({"detail": "PDF not found"}), 404
+
+    return send_file(path, mimetype="application/pdf")
 
 
 @app.route("/api/admin/job/<job_id>/complete", methods=["POST"])
