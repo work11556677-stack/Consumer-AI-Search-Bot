@@ -758,26 +758,6 @@ def _safe_key(row, key):
     # sqlite3.Row supports "in" for keys
     return row[key] if key in row.keys() else None
 
-def _derive_doc_fields(row):
-    """
-    Returns (title, published_at, source_url, source_path) pulled from
-    physical columns when present, otherwise from meta JSON.
-    """
-    meta = {}
-    mj = _safe_key(row, "meta_json")
-    if mj:
-        try:
-            meta = json.loads(mj) if isinstance(mj, str) else mj
-        except Exception:
-            meta = {}
-
-    title = _safe_key(row, "title") or meta.get("page_title") or meta.get("title") or ""
-    published_at = _safe_key(row, "published_at") or meta.get("published_at") or meta.get("date") or ""
-    source_url = _safe_key(row, "source_url") or meta.get("source_url") or meta.get("url") or ""
-    source_path = _safe_key(row, "source_path") or meta.get("source_path") or meta.get("path") or ""
-
-    return title, published_at, source_url, source_path
-
 def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list[dict]:
     """
     Return rows with unified keys: page:int, chunk_index:int, text:str
@@ -829,54 +809,123 @@ def _fetch_doc_chunks_robust(conn: sqlite3.Connection, document_id: int) -> list
     print("query_manager:_fetch_doc_chunks_robust:DEBUG: no layouts matched; returning []")
     return []
 
-def _build_context_blocks(conn: sqlite3.Connection, picked_docs: list[dict]):
+def _build_context_blocks(
+    conn: sqlite3.Connection,
+    refs: List[Dict[str, Any]],
+    max_chunks_per_doc: int = 12,
+    max_chars_per_doc: int = 8000,
+) -> tuple[list[str], list[dict]]:
     """
-    Build context_blocks + sources_for_prompt with lots of debug.
-    Uses _fetch_doc_chunks_robust so we actually get content, regardless of schema drift.
+    Build context text blocks and a 'sources_for_prompt' list
+    from the ranked refs.
+
+    - For each ref/document:
+        * Fetch up to `max_chunks_per_doc` chunks from the `chunk` table.
+        * Concatenate their text into one context block (capped at `max_chars_per_doc`).
+        * Track page numbers from page_start/page_end.
+    - sources_for_prompt[i] corresponds to S(i+1) in the LLM prompt/output.
+
+    Returns:
+        (context_blocks, sources_for_prompt)
+        where:
+          context_blocks: List[str]
+          sources_for_prompt: List[Dict[str, Any]]
+            with keys:
+              - document_id
+              - title
+              - published_at
+              - pages       (sorted unique list of ints)
+              - db          ("main")
+              - source_path (absolute/derived path from refs)
+              - company_id, total_hits, name_hits, ticker_hits, alias_hits (if present)
     """
-    context_blocks: list[str] = []
-    sources_for_prompt: list[dict] = []
+    context_blocks: List[str] = []
+    sources_for_prompt: List[Dict[str, Any]] = []
 
-    print(f"query_manager:_build_context_blocks:DEBUG:: picked_docs={len(picked_docs)}")
+    cur = conn.cursor()
 
-    for i, r in enumerate(picked_docs, start=1):
-        did = int(r["document_id"])
-        title = (r.get("title") or f"Document {did}").strip()
+    for ref in refs:
+        doc_id = ref["document_id"]
 
-        chunks = _fetch_doc_chunks_robust(conn, did)
-        print(f"  query_manager:_build_context_blocks:DEBUG: [S{i}] doc_id={did} title='{title[:80]}' chunks={len(chunks)}")
-
-        if not chunks:
-            context_blocks.append("")
-            sources_for_prompt.append({"title": title, "document_id": did, "pages": [1]})
+        # -----------------------------
+        # 1) Fetch chunks for this doc
+        # -----------------------------
+        cur.execute(
+            """
+            SELECT text, section, chunk_index, page_start, page_end
+            FROM chunk
+            WHERE document_id = ?
+            ORDER BY chunk_index ASC
+            LIMIT ?
+            """,
+            (doc_id, max_chunks_per_doc),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            # no chunks -> skip this doc
             continue
 
-        pages_seen: list[int] = []
-        lines: list[str] = []
+        # -----------------------------
+        # 2) Build context text + pages
+        # -----------------------------
+        pieces: List[str] = []
+        pages_set = set()
 
-        for ch in chunks:
-            p = int(ch["page"] or 1)
-            if p not in pages_seen:
-                pages_seen.append(p)
-            t = ch["text"]
-            # keep each line reasonably bounded; LLM doesn’t need full pages
-            t = re.sub(r"\s+", " ", t).strip()
-            if t:
-                lines.append(f"[S{i} p{p}] {t}")
+        for text, section, chunk_index, page_start, page_end in rows:
+            if not text:
+                continue
 
-        block = "\n".join(lines) if lines else ""
+            # Track pages
+            if isinstance(page_start, int):
+                pages_set.add(page_start)
+            if isinstance(page_end, int):
+                pages_set.add(page_end)
+
+            # Simple formatting: include section header if present
+            if section:
+                pieces.append(f"[{section}]\n{text}")
+            else:
+                pieces.append(text)
+
+        if not pieces:
+            # no usable text -> skip
+            continue
+
+        # Join pieces and cap length to avoid overlong prompts
+        full_text = "\n\n".join(pieces)
+        if len(full_text) > max_chars_per_doc:
+            full_text = full_text[:max_chars_per_doc] + "\n\n[...]"
+
+        # Optional header for readability in the prompt
+        header = f"Document: {ref.get('title') or ''} (id={doc_id}, published={ref.get('published_at') or ''})"
+        block = header + "\n\n" + full_text
         context_blocks.append(block)
-        pages_seen = pages_seen[:100] or [1]
-        sources_for_prompt.append({"title": title, "document_id": did, "pages": pages_seen})
 
-        print(f"  query_manager:_build_context_blocks:DEBUG:[S{i}] pages_seen={pages_seen[:12]} block_len={len(block)}")
+        # -----------------------------
+        # 3) Build source entry for this doc
+        # -----------------------------
+        pages = sorted(p for p in pages_set if isinstance(p, int)) or [1]
 
-    # Quick summary for the whole set
-    nonempty = sum(1 for b in context_blocks if b.strip())
-    print(f"query_manager:_build_context_blocks:DEBUG:: nonempty_blocks={nonempty}/{len(context_blocks)}")
+        src_entry: Dict[str, Any] = {
+            "document_id": doc_id,
+            "title": ref.get("title") or "",
+            "published_at": ref.get("published_at") or "",
+            "pages": pages,
+            "db": "main",
+            # 👇 crucial: pass through for worker's PDF path mapping
+            "source_path": ref.get("source_path", ""),
+            # keep some useful metadata around if you need it in prompts/UI
+            "company_id": ref.get("company_id"),
+            "total_hits": ref.get("total_hits"),
+            "name_hits": ref.get("name_hits"),
+            "ticker_hits": ref.get("ticker_hits"),
+        }
+        if "alias_hits" in ref:
+            src_entry["alias_hits"] = ref["alias_hits"]
+
+        sources_for_prompt.append(src_entry)
+
     return context_blocks, sources_for_prompt
-
-
 
 # =========================================
 # Step 3: Final LLM output and formatting
@@ -1377,7 +1426,6 @@ def build_click_url_from_row(
 
 
 
-
 # =========================================
 # MAIN
 # =========================================
@@ -1464,16 +1512,39 @@ def main(q, top_k, conn):
     )
 
 
-    # Build refs with derived fields
+        # Build refs with derived fields
     refs: List[Dict[str, Any]] = []
     # We only know if alias_hits exists in DB; dynamic pool always has alias_hits key
     have_alias_col = database_manager._col_exists(conn, "company_term_count", "alias_hits")
+
     for r in picked_sorted:
         did = int(r["document_id"])
-        
-        title, published_at, source_url, source_path = _derive_doc_fields(r)
-        print(source_url)
-        print(source_path)
+
+        title = ""
+        published_at = ""
+        source_url = ""
+        source_path = ""
+
+        try:
+            doc_fields = database_manager.get_document_fields(conn, did)
+        except Exception as e:
+            print(f"query_manager:main:WARN: get_document_fields failed for document_id={did}: {e!r}")
+            doc_fields = {}
+
+        if doc_fields:
+            title = doc_fields.get("title") or ""
+            published_at = doc_fields.get("published_at") or ""
+            source_url = doc_fields.get("source_url") or ""
+
+            meta = doc_fields.get("meta") or {}
+            source_path = (
+                meta.get("absolute_path")
+                or doc_fields.get("source_path")
+                or ""
+            )
+
+        print(f"query_manager:main:DEBUG: doc_id={did} source_path={source_path!r}")
+
         ref = {
             "document_id": did,
             "title": title,
@@ -1485,15 +1556,14 @@ def main(q, top_k, conn):
             "name_hits": int(r["name_hits"] or 0),
             "ticker_hits": int(r["ticker_hits"] or 0),
         }
-        # dynamic_company_pool always has alias_hits; static pool may or may not
         if "alias_hits" in r.keys():
             ref["alias_hits"] = int(r["alias_hits"] or 0)
         elif have_alias_col:
             ref["alias_hits"] = 0
+
         refs.append(ref)
 
     print(f"query_manager:main:DEBUG: refs_built={len(refs)}")
-
 
     print(f"query_manager:main:FLOW: finish step 2")
     # =========================================
@@ -1514,13 +1584,13 @@ def main(q, top_k, conn):
         conn,
         context_blocks=context_blocks,
         user_query=q,
-        use_case="use_case_1",
+        use_case="use_case_1",  # keep as-is unless you want to branch on use_case
         sources_for_prompt=sources_for_prompt,
     )
 
-
-
-    # Link refs chosen by the model (now prefer highlighted pdfjs URL)
+    # =========================================
+    # STEP 4: Link refs chosen by the model
+    # =========================================
     llm_refs = llm_out.get("references", [])
     linked_refs: List[Dict[str, Any]] = []
     for ref in llm_refs:
@@ -1556,22 +1626,29 @@ def main(q, top_k, conn):
                 }
             )
 
-    print(f"query_manager:main:FLOW: finish step 3, creating final payload to return . . . ")
-    # Final payload
+    print("query_manager:main:FLOW: finish step 3, creating final payload to return . . . ")
+
+    # =========================================
+    # STEP 5: Build final payload
+    # =========================================
     summary_md = llm_out["summary_md"]
-    citations = llm_out["citations"]
-    references = parse_sources_from_llm_output(llm_out['out'])
+    citations = llm_out["citations"]  # e.g. [{bullet, S, page, quote}, ...]
+    references = parse_sources_from_llm_output(llm_out["out"])
+
+    # Persist to whatever QA log you have
     append_qa_output(
         question=q,
         summary_md=summary_md,
         citations=citations,
-        references=references
+        references=references,
     )
+
     data = {
-        "summary": llm_out["summary_md"],
+        "summary": summary_md,
         "summary_html": llm_out["summary_html"],
         "links": linked_refs,
+        # NOTE: this array is what the frontend and worker treat as S1, S2, S3...
         "sources": sources_for_prompt,
-        "inline_citations": llm_out.get("citations", []),
+        "inline_citations": citations,
     }
     return data
