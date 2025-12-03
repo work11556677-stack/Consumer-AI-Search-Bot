@@ -401,35 +401,39 @@ def dynamic_company_pool(
 
 def get_context_chunks_for_sources(conn, sources_for_prompt):
     """
-    Expand the compact source descriptors into FULL TEXT CONTEXT:
-    [
-        "[S1 p3] paragraph text...",
-        "[S1 p3] next paragraph...",
-        "[S2 p7] some text...",
-    ]
+    Build context text in EXACT SAME ORDER as sources_for_prompt.
+    Ensures:
+      - pages are sorted
+      - S# aligns correctly
+      - chunks returned in stable logical order
     """
     context_blocks = []
 
     for s_idx, src in enumerate(sources_for_prompt, start=1):
         doc_id = src["document_id"]
+
         pages = src.get("pages", [])
-        title = src.get("title", "")
+
+        # IMPORTANT: sort pages
+        pages = sorted(set(pages))
 
         for page in pages:
-            # fetch chunks that belong to doc_id AND match the page
-            rows = conn.execute("""
-                SELECT text, page_start, page_end
+            rows = conn.execute(
+                """
+                SELECT text, page_start, page_end, chunk_index
                 FROM chunk
                 WHERE document_id = ?
                   AND page_start = ?
                 ORDER BY chunk_index ASC
-            """, (doc_id, page)).fetchall()
+                """,
+                (doc_id, page)
+            ).fetchall()
 
             for r in rows:
                 txt = (r["text"] or "").strip()
                 if not txt:
                     continue
-                # prepend citation label
+
                 context_blocks.append(
                     f"[S{s_idx} p{page}] {txt}"
                 )

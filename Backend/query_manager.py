@@ -1031,6 +1031,7 @@ def _html_with_clickable_citations(md_bullets: str, sources: list[dict]) -> str:
     """
     html_ul = _bullets_to_html(md_bullets)
     def repl(m: re.Match) -> str:
+
         S = int(m.group("S"))
         page = int(m.group("page"))
         quote = m.group("quote")
@@ -1113,17 +1114,20 @@ def markdown_to_html(md: str, link_map: dict | None = None) -> str:
     close_list()
     return "".join(html_out)
 
-def _priority(src):
-    # sort sources so that multi-page or page>1 docs appear first 
-    pages = src.get("pages") or [src.get("page") or 1]
-    pages = [p for p in pages if isinstance(p, int)]
 
-    # If pages = [1] → lowest priority (push to end)
-    if pages == [1]:
-        return (1, pages)  # 1 = low priority
 
-    # Otherwise → high priority
-    return (0, pages)      # 0 = high priority
+def reorder_context_blocks(blocks):
+    page1 = []
+    others = []
+
+    for b in blocks:
+        # detect page 1: "p1", "p.1", "p 1", etc.
+        if re.search(r'\bp\.?0*1\b', b):
+            page1.append(b)
+        else:
+            others.append(b)
+
+    return others + page1
 
 def llm_summarise_persona(
     conn,
@@ -1137,28 +1141,21 @@ def llm_summarise_persona(
       [S# pPAGE "SHORT QUOTE"] at the END of each bullet.
     Also emits a machine-readable CITATIONS(JSON) block we can parse.
     """
-
-
     # FLOW: Build candidate list for the model (titles + available pages)
-
-    # cand_lines = []
-    # for i, s in enumerate(sources_for_prompt, 1):
-    #     pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
-    #     cand_lines.append(f"{i}. {s['title']} — {pages}")
-    # candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
-    # safe_blocks = context_blocks # _budget_texts(context_blocks)
-    # context_blocks = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
-    # sources_text = "\n\n".join(context_blocks)
-    
-    sorted_sources = sorted(sources_for_prompt, key=_priority)
     cand_lines = []
-    for i, s in enumerate(sorted_sources, 1):
+    for i, s in enumerate(sources_for_prompt, 1):
         pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
         cand_lines.append(f"{i}. {s['title']} — {pages}")
     candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
-    safe_blocks = context_blocks
-    context_blocks = database_manager.get_context_chunks_for_sources(conn, sorted_sources)
+
+    safe_blocks = context_blocks # _budget_texts(context_blocks)
+    context_blocks = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
     sources_text = "\n\n".join(context_blocks)
+
+
+    context_blocks = reorder_context_blocks(context_blocks)
+    for a in context_blocks:
+        print(a)
 
 
     base_persona = (
@@ -1223,7 +1220,7 @@ def llm_summarise_persona(
         - List ALL cited pages for that source, sorted ascending (e.g. "p.3, p.4, p.9").
         - The trailing quoted text must be ONE of the SHORT QUOTEs you used for that source.
         - All text must be copied exactly from context—no paraphrasing.
-        - WE SHOULD ONLY USE PAGE 1 SOURCES (p1) AS A LAST RESORT. 
+        - You can only use page 1 as a last resort [Sx p1]. Page 1 is an overview, and we want to find the explained section. 
 
     GENERAL RULES (CRITICAL):
     - The most important Criteria for choosing sources is THE MOST RECENT, RELEVANT SOURCE.
@@ -1256,7 +1253,7 @@ def llm_summarise_persona(
         temperature=0.2,
     )
     out = (r.choices[0].message.content or "").strip()
-    print(f"query_manager:llm_summarise_persona:DEBUG: llm_response: {out}")
+    print(f"query_manager:llm_summarize_persona:DEBUG: llm_response: {out}")
 
     # FLOW: Split out bullets / CITATIONS(JSON) / Sources 
     lines = out.splitlines()
@@ -1333,6 +1330,8 @@ def llm_summarise_persona(
         "citations": citations_json,
         "out": out,
     }
+
+
 
 def prefer_pdf_path(p: Path | None) -> Path | None:
     """Swap .docx -> .pdf; leave others as-is."""
@@ -1461,7 +1460,7 @@ def build_click_url_from_row(
 # =========================================
 def main(q, top_k, conn):
     print(f"query_manager:main:FLOW: entered overview with q='{q}' top_k={top_k}")
-    top_k = 3
+    top_k = 5
 
 
     # =========================================
@@ -1610,7 +1609,6 @@ def main(q, top_k, conn):
         print("query_manager:main:ERROR: No non-empty context blocks after chunk fetch -> aborting.")
         return
 
-    print(context_blocks)
     llm_out = llm_summarise_persona(
         conn,
         context_blocks=context_blocks,
