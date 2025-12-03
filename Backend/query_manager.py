@@ -1114,8 +1114,6 @@ def markdown_to_html(md: str, link_map: dict | None = None) -> str:
     close_list()
     return "".join(html_out)
 
-
-
 def reorder_context_blocks(blocks):
     page1 = []
     others = []
@@ -1128,6 +1126,85 @@ def reorder_context_blocks(blocks):
             others.append(b)
 
     return others + page1
+
+
+##### ------------------- NEW -------------------
+
+def reorder_context_blocks_for_llm(blocks):
+    """
+    Splits context blocks into:
+      - page1_blocks: all page-1 chunks (overview)
+      - non_page1_blocks: all other pages, reordered so page 1 is NOT included.
+    
+    Returns:
+        (non_page1_blocks, page1_blocks)
+    """
+
+    page1_blocks = []
+    other_blocks = []
+
+    for b in blocks:
+        # detect page 1: "[S# p1]" or "[S# p.1]" or "p 1"
+        # we detect ONLY the citation prefix at start: [S3 p1]
+        m = re.match(r"\[S(\d+)\s+p\.?0*1\]", b.strip())
+        if m:
+            page1_blocks.append(b)
+        else:
+            other_blocks.append(b)
+
+    # You previously returned blocks sorted with page1 at end.
+    # Now, the caller controls ordering; we just return both lists cleanly.
+
+    return other_blocks, page1_blocks
+
+
+
+def rewrite_query_using_page1(user_query: str, page1_blocks: List[str]) -> str:
+    """
+    Uses page-1 overview text to rewrite the user's question into a more
+    specific, context-directed analytical question.
+    """
+
+    if not page1_blocks:
+        return user_query  # fallback
+
+    system_msg = """
+    You are an expert Australian retail analyst.
+    You rewrite user questions into sharper, more directed analytical questions
+    using ONLY the high-level overview text provided (page 1 of reports).
+
+    RULES:
+    - Do NOT introduce any new numeric claims.
+    - Do NOT invent facts.
+    - Your rewrite should reflect the themes/topics the reports emphasise.
+    - Make the question more specific so the downstream LLM looks for
+      detailed quantified metrics in later pages.
+    - Output ONLY the rewritten question with no explanation.
+    """
+
+    joined_page1 = "\n\n".join(page1_blocks)
+
+    user_msg = f"""
+    ORIGINAL QUESTION:
+    {user_query}
+
+    OVERVIEW CONTEXT (PAGE 1):
+    {joined_page1}
+
+    Rewrite the question now:
+    """
+
+    r = openai_manager.CLIENT.chat.completions.create(
+        model=config.LLM_MODEL,
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg}
+        ],
+        temperature=0.2,
+    )
+
+    return (r.choices[0].message.content or "").strip()
+
 
 def llm_summarise_persona(
     conn,
@@ -1149,15 +1226,23 @@ def llm_summarise_persona(
     candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
 
     safe_blocks = context_blocks # _budget_texts(context_blocks)
-    context_blocks = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
+    context_blocks_full = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
+
+    non_page1_blocks, page1_blocks = reorder_context_blocks_for_llm(context_blocks_full)
+    print("DEBUG: page1_blocks:", len(page1_blocks))
+    print("DEBUG: non_page1_blocks:", len(non_page1_blocks))
+
+
+    rewritten_query = rewrite_query_using_page1(user_query, page1_blocks)
+    print("DEBUG: rewritten_query =", rewritten_query)
+
+
+    context_blocks = non_page1_blocks
     sources_text = "\n\n".join(context_blocks)
 
 
-    context_blocks = reorder_context_blocks(context_blocks)
-    for a in context_blocks:
-        print(a)
 
-
+    # base_persona = config.get_llm_main_prompts(use_case)
     base_persona = (
         "Persona: CEO-brief writer for Australian retail. Use ONLY the provided internal context.\n"
         "Priorities: newest first; crisp, quantified forward-looking bullets. No investment advice."
@@ -1240,7 +1325,7 @@ def llm_summarise_persona(
 
     system = base_persona + "\n\n" + rules + "\nCANDIDATES:\n" + candidates_block
     user = (
-        f"User query: {user_query}\n\n"
+        f"User query: {rewritten_query}\n\n"
         f"Context snippets (each prefixed with [S# pN]):\n{sources_text}\n\n"
         "Write the bullets, then the CITATIONS(JSON) array, then the final 'Sources' section now. "
         "Do not add anything else."
@@ -1332,6 +1417,208 @@ def llm_summarise_persona(
     }
 
 
+# def llm_summarise_persona(
+#     conn,
+#     context_blocks: List[str],
+#     user_query: str,
+#     use_case: str,
+#     sources_for_prompt: List[Dict[str, Any]],
+# ) -> Dict[str, str]:
+#     """
+#     Persona summary with STRICT inline citation markers:
+#       [S# pPAGE "SHORT QUOTE"] at the END of each bullet.
+#     Also emits a machine-readable CITATIONS(JSON) block we can parse.
+#     """
+#     # FLOW: Build candidate list for the model (titles + available pages)
+#     cand_lines = []
+#     for i, s in enumerate(sources_for_prompt, 1):
+#         pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
+#         cand_lines.append(f"{i}. {s['title']} — {pages}")
+#     candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
+
+#     safe_blocks = context_blocks # _budget_texts(context_blocks)
+#     context_blocks = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
+#     sources_text = "\n\n".join(context_blocks)
+
+
+#     context_blocks = reorder_context_blocks(context_blocks)
+#     for a in context_blocks:
+#         print(a)
+
+
+#     # base_persona = config.get_llm_main_prompts(use_case)
+#     base_persona = (
+#         "Persona: CEO-brief writer for Australian retail. Use ONLY the provided internal context.\n"
+#         "Priorities: newest first; crisp, quantified forward-looking bullets. No investment advice."
+#         if use_case != "use_case_2" else
+#         "Persona: Sector/macro brief writer. Use ONLY the provided internal context.\n"
+#         "Priorities: newest first; sector-level quantified bullets. No investment advice."
+#     )
+
+
+
+#     rules = f"""OUTPUT SPEC (STRICT — FOLLOW EXACTLY):
+
+#     1) BULLETS
+#     - Write up to three concise bullets.
+#     - Each bullet must start with "- " (dash + space).
+#     - EVERY factual statement (numbers, percentages, dates, “up/down”, specific claims)
+#         MUST end with one or more citation markers.
+#     - Citation marker format (STRICT):
+#         [S# pPAGE "SHORT QUOTE"]
+#         Examples:
+#             [S1 p7 "traffic rose 3% year-on-year in FY25"]
+#             [S2 p3 "growth in comparable store sales during H1"]
+
+#     RULES FOR CITATION MARKERS:
+#         - S# is the source index shown in CANDIDATES (1-based).
+#         - PAGE is the page number from the [S# pN] prefix in the context.
+#         - SHORT QUOTE:
+#             * EXACT, verbatim text copied from the underlying context for that S and page.
+#             * Must be 6–12 consecutive words.
+#             * No paraphrasing, no substitutions, no reordering.
+#         - Place the marker IMMEDIATELY after the sentence or clause it supports.
+#         - A bullet may contain multiple markers if using multiple claims.
+
+#     2) CITATIONS(JSON)
+#     After the bullets, output EXACTLY this line:
+#         CITATIONS(JSON)
+#     On the next line output ONLY a valid JSON array, e.g.:
+#         [
+#         {{ "bullet": 1, "S": 1, "page": 7, "quote": "traffic rose 3% year-on-year in FY25" }},
+#         {{ "bullet": 1, "S": 2, "page": 3, "quote": "growth in comparable store sales during H1" }}
+#         ]
+
+#     JSON RULES:
+#         - One object per citation marker used in the bullets.
+#         - "bullet" is 1-based bullet index.
+#         - "S" matches the S# from the marker.
+#         - "page" is the same page number as in the marker.
+#         - "quote" exactly matches the SHORT QUOTE used inside that marker.
+#         - JSON must be valid: no comments, no trailing commas.
+
+#     3) Sources
+#     After the JSON array, output a “Sources” section:
+#         Sources
+#         - <Exact title from CANDIDATES> — p.N[, p.M ...] — "ONE REPRESENTATIVE QUOTE"
+
+#     RULES:
+#         - The first line must be exactly: Sources
+#         - Then one bullet line per DISTINCT cited source.
+#         - Titles MUST match exactly what appears in CANDIDATES.
+#         - List ALL cited pages for that source, sorted ascending (e.g. "p.3, p.4, p.9").
+#         - The trailing quoted text must be ONE of the SHORT QUOTEs you used for that source.
+#         - All text must be copied exactly from context—no paraphrasing.
+#         - You can only use page 1 as a last resort [Sx p1]. Page 1 is an overview, and we want to find the explained section. 
+
+#     GENERAL RULES (CRITICAL):
+#     - The most important Criteria for choosing sources is THE MOST RECENT, RELEVANT SOURCE.
+#     - YOU MUST, for every single dotpoint have the date of the given report Listed in month-yyyy (Jan-2025) at the start of the dotpoint. 
+#     - When answering with metrics, you MUST NOT quote multiple of the same/ similar metrics from multiple reports. You must only choose the most upto date metric, and quote in brackets the date when it was given. 
+#     - You MUST NOT use ANY information not found in the provided context.
+#     - If the context does not include sufficient information, write fewer bullets or none.
+#     - Every factual assertion must be grounded in a verbatim quote.
+#     - If you cannot find a valid 6–12 word quote, you may NOT make the claim.
+#     - You may skip bullets entirely if the source text is too thin.
+#     - Precision over breadth: fewer correct bullets > more speculative content.
+#     - Use Australian-English spelling and syntax pelase. 
+#     """
+
+
+
+
+#     system = base_persona + "\n\n" + rules + "\nCANDIDATES:\n" + candidates_block
+#     user = (
+#         f"User query: {user_query}\n\n"
+#         f"Context snippets (each prefixed with [S# pN]):\n{sources_text}\n\n"
+#         "Write the bullets, then the CITATIONS(JSON) array, then the final 'Sources' section now. "
+#         "Do not add anything else."
+#     )
+
+#     r = openai_manager.CLIENT.chat.completions.create(
+#         model=config.LLM_MODEL,
+#         messages=[{"role": "system", "content": system},
+#                   {"role": "user", "content": user}],
+#         temperature=0.2,
+#     )
+#     out = (r.choices[0].message.content or "").strip()
+#     print(f"query_manager:llm_summarize_persona:DEBUG: llm_response: {out}")
+
+#     # FLOW: Split out bullets / CITATIONS(JSON) / Sources 
+#     lines = out.splitlines()
+#     bullets, sources_lines = [], []
+#     in_sources = False
+#     for ln in lines:
+#         if re.match(r"^\s*CITATIONS\(JSON\)\s*$", ln.strip(), flags=re.I):
+#             # stop collecting bullets here; JSON will be parsed separately
+#             break
+#         if re.match(r"^\s*sources\s*:?\s*$", ln.strip(), flags=re.I):
+#             in_sources = True
+#             continue
+#         if in_sources:
+#             if ln.strip():
+#                 sources_lines.append(ln.strip())
+#         else:
+#             if ln.strip().startswith(("-", "*", "•")):
+#                 bullets.append(ln.rstrip())
+
+#     bullets_md = "\n".join(bullets[:3]).rstrip()
+#     sources_md = "\n".join(sources_lines).strip()
+
+#     # FLOW: Format 
+#     # Parse the CITATIONS(JSON) array 
+#     m = re.search(r"CITATIONS\(JSON\)\s*(\[.*?\])", out, flags=re.S | re.I)
+#     citations_json = []
+#     if m:
+#         try:
+#             citations_json = json.loads(m.group(1))
+#         except Exception:
+#             citations_json = []
+
+#     # Build HTML with live, clickable [S# pN] anchors 
+#     bullets_html = _html_with_clickable_citations(bullets_md, sources_for_prompt)
+
+#     # Link 'Sources' titles to the first cited page for that source 
+#     link_map = {}
+#     for i, s in enumerate(sources_for_prompt, 1):
+#         # First cited page for S=i in the JSON, else the first page from pages list
+#         cited_pages = [int(c.get("page", 1)) for c in citations_json if int(c.get("S", 0)) == i]
+#         page = cited_pages[0] if cited_pages else int((s.get("pages") or [s.get("page") or 1])[0])
+#         href = _link_for_citation([s], 1, page, s.get("quote_hint", ""))
+#         if href:
+#             link_map[s["title"]] = {"url": href, "page": page}
+
+#     sources_html = ""
+#     if sources_md:
+#         sources_html = markdown_to_html("Sources\n" + sources_md, link_map=link_map)
+
+#     summary_html = bullets_html + (sources_html if sources_html else "")
+
+#     # Keep existing “references” extraction for compatibility
+#     references = []
+#     for ln in sources_lines:
+#         m2 = re.match(r"[-*•]\s*(.+?)\s*[—-]\s*p\.(.+)\s*$", ln, flags=re.I)
+#         if not m2:
+#             continue
+#         title = m2.group(1).strip()
+#         pages_str = m2.group(2).strip()
+#         pages = []
+#         for tok in re.split(r"[,\s]+", pages_str):
+#             tok = tok.strip().strip(",")
+#             if tok.isdigit():
+#                 pages.append(int(tok))
+#         if pages:
+#             references.append({"title": title, "pages": pages})
+
+#     summary_md = bullets_md + ("\n\nSources\n" + sources_md if sources_md else "")
+
+#     return {
+#         "summary_md": summary_md,
+#         "summary_html": summary_html,
+#         "references": references,
+#         "citations": citations_json,
+#         "out": out,
+#     }
 
 def prefer_pdf_path(p: Path | None) -> Path | None:
     """Swap .docx -> .pdf; leave others as-is."""
