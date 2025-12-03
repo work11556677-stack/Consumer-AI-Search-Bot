@@ -1793,4 +1793,3 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
     }
     return data
 
-
