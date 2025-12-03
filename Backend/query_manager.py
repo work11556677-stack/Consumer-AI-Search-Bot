@@ -834,8 +834,9 @@ def _build_context_blocks(
     for ref in refs:
         doc_id = ref["document_id"]
 
-        
-        # FLOW: Fetch limited chunks for context text
+        # -----------------------------
+        # 1) Fetch limited chunks for context text
+        # -----------------------------
         cur.execute(
             """
             SELECT text, section, chunk_index, page_start, page_end
@@ -880,10 +881,10 @@ def _build_context_blocks(
         block = header + "\n\n" + full_text
         context_blocks.append(block)
 
-        
-        # FLOW: Separately collect ALL pages for this document
+        # -----------------------------
+        # 2) Separately collect ALL pages for this document
         #    (not limited by max_chunks_per_doc)
-        
+        # -----------------------------
         all_pages_set = set(pages_from_context)
 
         cur.execute(
@@ -904,10 +905,12 @@ def _build_context_blocks(
         # Final pages list; if still empty, fall back to [1]
         pages = sorted(p for p in all_pages_set if isinstance(p, int)) or [1]
 
-        ##  If you want to debug:
+        # If you want to debug:
         # print(f"doc_id={doc_id}, pages={pages}")
 
-        # FLOW: Build source entry for this doc
+        # -----------------------------
+        # 3) Build source entry for this doc
+        # -----------------------------
         src_entry: Dict[str, Any] = {
             "document_id": doc_id,
             "title": ref.get("title") or "",
@@ -926,6 +929,7 @@ def _build_context_blocks(
         sources_for_prompt.append(src_entry)
 
     return context_blocks, sources_for_prompt
+
 
 
 # =========================================
