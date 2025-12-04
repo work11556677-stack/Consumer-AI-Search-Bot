@@ -4,9 +4,11 @@ import threading
 import uuid
 from typing import Any, Dict
 import os
-from flask import send_file
 from werkzeug.utils import secure_filename
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_file, redirect
+from werkzeug.utils import secure_filename
+from urllib.parse import urlencode
+
 
 app = Flask(__name__)
 
@@ -1000,18 +1002,39 @@ def admin_upload_pdf(job_id: str):
 
 @app.route("/pdf/<job_id>/<doc_id>", methods=["GET"])
 def serve_pdf(job_id: str, doc_id: str):
+    # Read optional query params (these are what your JS / links are appending)
+    page = request.args.get("page")
+    quote_text = request.args.get("quote")
+
+    # If page/quote is present, redirect to the viewer page
+    # so it can open on the right page and highlight the quote.
+    if page is not None or quote_text is not None:
+        # This is the raw PDF endpoint the viewer iframe will use
+        file_param = f"/pdf/{job_id}/{doc_id}"
+
+        query = {"file": file_param}
+        if page:
+            query["page"] = page
+        if quote_text:
+            query["quote"] = quote_text
+
+        target = "/pdf_viewer?" + urlencode(query)
+        return redirect(target, code=302)
+
+    # Otherwise, just stream the raw PDF as before
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
-            return jsonify({"detail": "Job not found"}), 404
+            return jsonify({"detail": 'Job not found'}), 404
 
         pdf_paths = job.get("pdf_paths") or {}
         path = pdf_paths.get(str(doc_id))
 
     if not path or not os.path.exists(path):
-        return jsonify({"detail": "PDF not found"}), 404
+        return jsonify({"detail": 'PDF not found'}), 404
 
     return send_file(path, mimetype="application/pdf")
+
 
 
 @app.route("/api/admin/job/<job_id>/complete", methods=["POST"])
