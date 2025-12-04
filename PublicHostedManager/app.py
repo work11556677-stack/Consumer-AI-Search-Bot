@@ -869,7 +869,7 @@ HTML_INDEX = """<!DOCTYPE html>
     }
 
     async function pollJob(jobId) {
-      summaryPillEl.textContent = "Waiting for backend…";
+      summaryPillEl.textContent = "Processing . . . ";
       while (true) {
         const resp = await fetch("/api/job/" + jobId);
         if (!resp.ok) {
@@ -886,7 +886,7 @@ HTML_INDEX = """<!DOCTYPE html>
           submitBtn.disabled = false;
           break;
         } else if (job.status === "pending" || job.status === "processing") {
-          statusEl.textContent = "Processing on backend…";
+          statusEl.textContent = "Processing . . . ";
           await new Promise(r => setTimeout(r, 2000));
         } else {
           statusEl.textContent = "Error: unexpected status " + job.status;
