@@ -1114,83 +1114,7 @@ def markdown_to_html(md: str, link_map: dict | None = None) -> str:
     close_list()
     return "".join(html_out)
 
-##### ------------------- NEW -------------------
-
-def reorder_context_blocks(blocks):
-    """
-    Splits context blocks into:
-      - page1_blocks: all page-1 chunks (overview)
-      - non_page1_blocks: all other pages, reordered so page 1 is NOT included.
-    
-    Returns:
-        (non_page1_blocks, page1_blocks)
-    """
-
-    page1_blocks = []
-    other_blocks = []
-
-    for b in blocks:
-        # detect page 1: "[S# p1]" or "[S# p.1]" or "p 1"
-        # we detect ONLY the citation prefix at start: [S3 p1]
-        m = re.match(r"\[S(\d+)\s+p\.?0*1\]", b.strip())
-        if m:
-            page1_blocks.append(b)
-        else:
-            other_blocks.append(b)
-
-    # You previously returned blocks sorted with page1 at end.
-    # Now, the caller controls ordering; we just return both lists cleanly.
-
-    return other_blocks, page1_blocks
-
-def main_llm_answer(
-    conn,
-    context_blocks: List[str],
-    user_query: str,
-    use_case: str,
-    sources_for_prompt: List[Dict[str, Any]],
-) -> Dict[str, str]:
-    """
-    Persona summary with STRICT inline citation markers:
-      [S# pPAGE "SHORT QUOTE"] at the END of each bullet.
-    Also emits a machine-readable CITATIONS(JSON) block we can parse.
-    """
-    # -------- FLOW: Organise and Get full sources text 
-
-    # Build candidate list for the model (titles + available pages)
-    cand_lines = []
-    for i, s in enumerate(sources_for_prompt, 1):
-        pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
-        cand_lines.append(f"{i}. {s['title']} — {pages}")
-    candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
-
-    # get the full doc text for each of thesources 
-    context_blocks_full = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
-
-    # extract pg1 and non-pg1 blocks
-    non_page1_blocks, page1_blocks = reorder_context_blocks(context_blocks_full)
-    print("query_manager:main_llm_answer:DEBUG: page1_blocks:", len(page1_blocks))
-    print("query_manager:main_llm_answer:DEBUG: non_page1_blocks:", len(non_page1_blocks))
-
-    # -------- FLOW: send pg1 blocks and query to be reformulated 
-    rewritten_query = openai_manager.reformulate_query(user_query, page1_blocks, candidates_block)
-    print("query_manager:main_llm_answer:DEBUG: rewritten_query =", rewritten_query)
-
-
-    # -------- FLOW: Main LLM answer
-
-    # format sources text
-    context_blocks = non_page1_blocks
-    sources_text = "\n\n".join(context_blocks)
-
-    # send to manager 
-    llm_out = openai_manager.main_answer(rewritten_query, candidates_block, sources_text, use_case)
-
-
-
-
-    # -------- FLOW: Extracting and Formatting LLM Output 
-    
+def create_llm_output_dict(llm_out, sources_for_prompt):
     # Split out bullets / CITATIONS(JSON) / Sources 
     lines = llm_out.splitlines()
     bullets, sources_lines = [], []
@@ -1265,6 +1189,81 @@ def main_llm_answer(
         "citations": citations_json,
         "out": llm_out,
     }
+
+def reorder_context_blocks(blocks):
+    """
+    Splits context blocks into:
+      - page1_blocks: all page-1 chunks (overview)
+      - non_page1_blocks: all other pages, reordered so page 1 is NOT included.
+    
+    Returns:
+        (non_page1_blocks, page1_blocks)
+    """
+
+    page1_blocks = []
+    other_blocks = []
+
+    for b in blocks:
+        # detect page 1: "[S# p1]" or "[S# p.1]" or "p 1"
+        # we detect ONLY the citation prefix at start: [S3 p1]
+        m = re.match(r"\[S(\d+)\s+p\.?0*1\]", b.strip())
+        if m:
+            page1_blocks.append(b)
+        else:
+            other_blocks.append(b)
+
+    # You previously returned blocks sorted with page1 at end.
+    # Now, the caller controls ordering; we just return both lists cleanly.
+
+    return other_blocks, page1_blocks
+
+def main_llm_answer(
+    conn,
+    context_blocks: List[str],
+    user_query: str,
+    use_case: str,
+    sources_for_prompt: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    """
+    Persona summary with STRICT inline citation markers:
+      [S# pPAGE "SHORT QUOTE"] at the END of each bullet.
+    Also emits a machine-readable CITATIONS(JSON) block we can parse.
+    """
+    # -------- FLOW: Organise and Get full sources text 
+
+    # Build candidate list for the model (titles + available pages)
+    cand_lines = []
+    for i, s in enumerate(sources_for_prompt, 1):
+        pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
+        cand_lines.append(f"{i}. {s['title']} — {pages}")
+    candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
+
+    # get the full doc text for each of thesources 
+    context_blocks_full = database_manager.get_context_chunks_for_sources(conn, sources_for_prompt)
+
+    # extract pg1 and non-pg1 blocks
+    non_page1_blocks, page1_blocks = reorder_context_blocks(context_blocks_full)
+    print("query_manager:main_llm_answer:DEBUG: page1_blocks:", len(page1_blocks))
+    print("query_manager:main_llm_answer:DEBUG: non_page1_blocks:", len(non_page1_blocks))
+
+    # -------- FLOW: send pg1 blocks and query to be reformulated 
+    rewritten_query = openai_manager.reformulate_query(user_query, page1_blocks, candidates_block)
+    print("query_manager:main_llm_answer:DEBUG: rewritten_query =", rewritten_query)
+
+
+    # -------- FLOW: Main LLM answer
+
+    # format sources text
+    context_blocks = non_page1_blocks
+    sources_text = "\n\n".join(context_blocks)
+
+    # send to manager 
+    llm_out = openai_manager.main_answer(rewritten_query, candidates_block, sources_text, use_case)
+
+    # -------- FLOW: Extracting and Formatting LLM Output 
+    return create_llm_output_dict(llm_out, sources_for_prompt)
+
+
 
 def prefer_pdf_path(p: Path | None) -> Path | None:
     """Swap .docx -> .pdf; leave others as-is."""
@@ -1690,6 +1689,13 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
         "query_manager:expand_bullet:DEBUG: context_blocks_nonempty="
         f"{sum(1 for b in context_blocks if b.strip())} / {len(context_blocks)}"
     )
+    # format the sources into a nice line
+    cand_lines = []
+    for i, s in enumerate(sources_for_prompt, 1):
+        pages = ", ".join([f"p.{p}" for p in (s.get("pages") or [s.get("page") or 1])][:12]) or "p.1"
+        cand_lines.append(f"{i}. {s['title']} — {pages}")
+    candidates_block = "\n".join(cand_lines) if cand_lines else "No candidates."
+
 
     if not any(b.strip() for b in context_blocks):
         print("query_manager:expand_bullet:ERROR: No non-empty context blocks -> aborting.")
@@ -1703,18 +1709,6 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
 
     # -------- FLOW: send to llm  
     sources_text = "\n\n".join(context_blocks)
-    print(ref)
-    llm_out = openai_manager.main_answer("", ref, sources_text, "use_case_3")
+    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3")
 
-    # extract and return 
-    summary_md = llm_out["summary_md"]
-    citations = llm_out["citations"]
-
-    data = {
-        "summary": summary_md,
-        "summary_html": llm_out["summary_html"],
-        "sources": sources_for_prompt,        # S1, S2, ... (here usually just S1)
-        "inline_citations": citations,        # [{bullet, S, page, quote}, ...]
-    }
-    return data
-
+    return create_llm_output_dict(llm_out, sources_for_prompt)

@@ -29,7 +29,7 @@ MAIN_RULES = f"""OUTPUT SPEC (STRICT — FOLLOW EXACTLY):
         - Place the marker IMMEDIATELY after the sentence or clause it supports.
         - A bullet may contain multiple markers if using multiple claims.
 
-    2) CITATIONS(JSON)
+    CITATIONS(JSON)
     After the bullets, output EXACTLY this line:
         CITATIONS(JSON)
     On the next line output ONLY a valid JSON array, e.g.:
@@ -46,7 +46,7 @@ MAIN_RULES = f"""OUTPUT SPEC (STRICT — FOLLOW EXACTLY):
         - "quote" exactly matches the SHORT QUOTE used inside that marker.
         - JSON must be valid: no comments, no trailing commas.
 
-    3) Sources
+    Sources
     After the JSON array, output a “Sources” section:
         Sources
         - <Exact title from CANDIDATES> — p.N[, p.M ...] — "ONE REPRESENTATIVE QUOTE"
@@ -79,24 +79,48 @@ EXPANSION_RULES = f"""
 
     1) BULLETS
     - Produce ONE expanded bullet that provides deeper, more specific detail than the original bullet.
-    - The bullet must start with "- " (dash + space).
-    - You MUST NOT repeat or restate the original bullet. You must produce NEW, expanded content.
-    - Expand using ONLY information contained in the provided document.
-    - Every factual statement (numbers, percentages, dates, “up/down”, specific claims)
+    - Write up to three concise bullets.
+    - Each bullet must start with "- " (dash + space).
+    - EVERY factual statement (numbers, percentages, dates, “up/down”, specific claims)
         MUST end with one or more citation markers.
-    - The expanded bullet may contain multiple sentences, but it must still appear as ONE bullet.
+    - Citation marker format (STRICT):
+        [S# pPAGE "SHORT QUOTE"]
+        Examples:
+            [S1 p7 "traffic rose 3% year-on-year in FY25"]
+            [S2 p3 "growth in comparable store sales during H1"]
 
-    CITATION MARKER FORMAT (STRICT):
-        [S1 pPAGE "SHORT QUOTE"]
 
     RULES FOR CITATION MARKERS:
-    - Always use S1 (only one document is provided).
-    - PAGE must match the page number from the [S1 pN] prefix in the context.
-    - SHORT QUOTE:
-        * EXACT, verbatim text copied from the underlying context for that page.
-        * Must be 6–12 consecutive words.
-        * No paraphrasing, no substitutions, no reordering.
-    - Place the marker IMMEDIATELY after the sentence or clause it supports.
+        - S# is the source index shown in CANDIDATES (1-based).
+        - PAGE is the page number from the [S# pN] prefix in the context.
+        - SHORT QUOTE:
+            * EXACT, verbatim text copied from the underlying context for that S and page.
+            * Must be 6–12 consecutive words.
+            * No paraphrasing, no substitutions, no reordering.
+        - Place the marker IMMEDIATELY after the sentence or clause it supports.
+        - A bullet may contain multiple markers if using multiple claims.
+
+    CITATIONS(JSON)
+    After the bullets, output EXACTLY this line:
+        CITATIONS(JSON)
+    On the next line output ONLY a valid JSON array, e.g.:
+        [
+        {{ "bullet": 1, "S": 1, "page": 7, "quote": "traffic rose 3% year-on-year in FY25" }},
+        {{ "bullet": 1, "S": 2, "page": 3, "quote": "growth in comparable store sales during H1" }}
+        ]
+
+    JSON RULES:
+        - One object per citation marker used in the bullets.
+        - "bullet" is 1-based bullet index.
+        - "S" matches the S# from the marker.
+        - "page" is the same page number as in the marker.
+        - "quote" exactly matches the SHORT QUOTE used inside that marker.
+        - JSON must be valid: no comments, no trailing commas.
+
+    Sources
+    After the JSON array, output a “Sources” section:
+        Sources
+        - <Exact title from CANDIDATES> — p.N[, p.M ...] — "ONE REPRESENTATIVE QUOTE"
 
     GENERAL RULES:
     - DO NOT introduce new facts not present in the document.
