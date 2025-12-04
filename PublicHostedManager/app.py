@@ -6,7 +6,7 @@ from typing import Any, Dict
 import os
 from flask import send_file
 from werkzeug.utils import secure_filename
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_file, redirect
 
 app = Flask(__name__)
 
@@ -1070,6 +1070,16 @@ def admin_upload_pdf(job_id: str):
 
 @app.route("/pdf/<job_id>/<doc_id>", methods=["GET"])
 def serve_pdf(job_id: str, doc_id: str):
+    # If a page query param is present, redirect to the same URL
+    # but with a #page=... fragment so the browser PDF viewer jumps there.
+    page = request.args.get("page")
+    if page:
+        # Build the same path without query and add the hash.
+        # request.path is "/pdf/<job_id>/<doc_id>"
+        target = f"{request.path}#page={page}"
+        return redirect(target, code=302)
+
+    # Normal behaviour: stream the PDF binary
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
