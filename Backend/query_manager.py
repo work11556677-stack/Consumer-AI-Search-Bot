@@ -1670,7 +1670,7 @@ def _make_ref_for_document(conn, doc_id: int) -> Dict[str, Any]:
     }
     return ref
 
-def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
+def expand_bullet(conn, doc_id: int, bullet_text: str, last_main_query: str) -> Dict[str, Any]:
     """
     Expand on a single summary bullet using ONE underlying document.
 
@@ -1726,6 +1726,6 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
 
     # -------- FLOW: send to llm  
     sources_text = "\n\n".join(context_blocks)
-    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3")
+    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3", expand_func_last_main_query=last_main_query)
 
     return create_llm_output_dict(llm_out, sources_for_prompt, "1", "2") # put in diff strings for used and user query so no refomrualtion 
