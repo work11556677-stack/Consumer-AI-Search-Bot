@@ -156,7 +156,7 @@ REFORMULATE_RULES = F"""
 # Helper Functions 
 
 
-def create_system_prompt(use_case):
+def create_system_prompt(use_case, expand_func_last_main_query=None):
     if use_case != "use_case_3":
         base_persona = (
             "Persona: CEO-brief writer for Australian retail. Use ONLY the provided internal context.\n"
@@ -175,6 +175,8 @@ def create_system_prompt(use_case):
             "and any additional explanations that appear in the document.\n"
             "NEVER invent information. NEVER restate the original bullet. NEVER generalise.\n"
             "Your output must be ONE newly expanded bullet using strict citation markers.\n"
+            f"You must expand the report with specific relation to the given question. {expand_func_last_main_query}"
+
         )
         rules = EXPANSION_RULES
 
@@ -238,9 +240,9 @@ def reformulate_query(user_query: str, page1_blocks: List[str], candidates_block
 
     return (r.choices[0].message.content or "").strip()
 
-def main_answer(query, candidates_block, sources_text, use_case):
+def main_answer(query, candidates_block, sources_text, use_case, expand_func_last_main_query=None):
     # define persona, based on use_case
-    persona, rules = create_system_prompt(use_case)
+    persona, rules = create_system_prompt(use_case, expand_func_last_main_query=expand_func_last_main_query)
 
     # format system and user prompt 
     system = persona + "\n\n" + MAIN_RULES + "\nCANDIDATES:\n" + candidates_block

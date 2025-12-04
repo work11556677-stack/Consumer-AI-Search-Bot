@@ -1114,7 +1114,7 @@ def markdown_to_html(md: str, link_map: dict | None = None) -> str:
     close_list()
     return "".join(html_out)
 
-def create_llm_output_dict(llm_out, sources_for_prompt):
+def create_llm_output_dict(llm_out, sources_for_prompt, user_query, used_query):
     # Split out bullets / CITATIONS(JSON) / Sources 
     lines = llm_out.splitlines()
     bullets, sources_lines = [], []
@@ -1182,13 +1182,23 @@ def create_llm_output_dict(llm_out, sources_for_prompt):
 
     summary_md = bullets_md + ("\n\nSources\n" + sources_md if sources_md else "")
 
-    return {
+    result = {
         "summary_md": summary_md,
         "summary_html": summary_html,
         "references": references,
         "citations": citations_json,
         "out": llm_out,
+        "used_query": user_query,
+        "reformulated": False
     }
+
+    # only add in if differnt!!! thanks. 
+    if user_query != used_query:
+        result["user_query"] = user_query
+        result["used_query"] = used_query
+        result['reformulated'] = True
+    return result
+
 
 def reorder_context_blocks(blocks):
     """
@@ -1223,6 +1233,7 @@ def main_llm_answer(
     user_query: str,
     use_case: str,
     sources_for_prompt: List[Dict[str, Any]],
+    reformulate: bool,
 ) -> Dict[str, str]:
     """
     Persona summary with STRICT inline citation markers:
@@ -1247,9 +1258,11 @@ def main_llm_answer(
     print("query_manager:main_llm_answer:DEBUG: non_page1_blocks:", len(non_page1_blocks))
 
     # -------- FLOW: send pg1 blocks and query to be reformulated 
-    rewritten_query = openai_manager.reformulate_query(user_query, page1_blocks, candidates_block)
-    print("query_manager:main_llm_answer:DEBUG: rewritten_query =", rewritten_query)
 
+    if reformulate:
+        query = openai_manager.reformulate_query(user_query, page1_blocks, candidates_block)
+        print("query_manager:main_llm_answer:DEBUG: reformulated_query =", query)
+    else: query = user_query
 
     # -------- FLOW: Main LLM answer
 
@@ -1258,10 +1271,10 @@ def main_llm_answer(
     sources_text = "\n\n".join(context_blocks)
 
     # send to manager 
-    llm_out = openai_manager.main_answer(rewritten_query, candidates_block, sources_text, use_case)
+    llm_out = openai_manager.main_answer(query, candidates_block, sources_text, use_case)
 
     # -------- FLOW: Extracting and Formatting LLM Output 
-    return create_llm_output_dict(llm_out, sources_for_prompt)
+    return create_llm_output_dict(llm_out, sources_for_prompt, user_query, query)
 
 
 
@@ -1390,7 +1403,7 @@ def build_click_url_from_row(
 # =========================================
 # MAIN
 # =========================================
-def main(q, top_k, conn):
+def main(q, top_k, conn, reformulate):
     print(f"query_manager:main:-------- FLOW: entered overview with q='{q}' top_k={top_k}")
     top_k = 5
 
@@ -1547,6 +1560,7 @@ def main(q, top_k, conn):
         user_query=q,
         use_case="use_case_1",  # keep as-is unless you want to branch on use_case
         sources_for_prompt=sources_for_prompt,
+        reformulate=reformulate
     )
 
     # =========================================
@@ -1611,7 +1625,10 @@ def main(q, top_k, conn):
         # NOTE: this array is what the frontend and worker treat as S1, S2, S3...
         "sources": sources_for_prompt,
         "inline_citations": citations,
+        "reformulated": llm_out['reformulated']
     }
+    if llm_out['reformulated']: 
+        data['used_query'] = llm_out['used_query']
     return data
 
 
@@ -1653,7 +1670,7 @@ def _make_ref_for_document(conn, doc_id: int) -> Dict[str, Any]:
     }
     return ref
 
-def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
+def expand_bullet(conn, doc_id: int, bullet_text: str, last_main_query: str) -> Dict[str, Any]:
     """
     Expand on a single summary bullet using ONE underlying document.
 
@@ -1709,6 +1726,6 @@ def expand_bullet(conn, doc_id: int, bullet_text: str) -> Dict[str, Any]:
 
     # -------- FLOW: send to llm  
     sources_text = "\n\n".join(context_blocks)
-    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3")
+    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3", expand_func_last_main_query=last_main_query)
 
-    return create_llm_output_dict(llm_out, sources_for_prompt)
+    return create_llm_output_dict(llm_out, sources_for_prompt, "1", "2") # put in diff strings for used and user query so no refomrualtion 
