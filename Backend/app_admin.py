@@ -65,6 +65,7 @@ def process_job(job: Dict[str, Any]) -> None:
     conn = database_manager.db(config.DB_PATH_MAIN)
     try:
         if job_type == "search": 
+            global LAST_MAIN_QUERY
             LAST_MAIN_QUERY = q
             print(f"app_admin:process_job:DEBUG: updated last_main_query with : {LAST_MAIN_QUERY}")
             result = query_manager.main(q, top_k, conn, reformulate)

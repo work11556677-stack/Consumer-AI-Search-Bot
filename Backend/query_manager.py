@@ -1726,6 +1726,7 @@ def expand_bullet(conn, doc_id: int, bullet_text: str, last_main_query: str) -> 
 
     # -------- FLOW: send to llm  
     sources_text = "\n\n".join(context_blocks)
-    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3", expand_func_last_main_query=last_main_query)
+    last_query_reference = f"Intial User Question: {bullet_text}. Dotpoint that User wants to focus on expanding: {last_main_query}"
+    llm_out = openai_manager.main_answer("", candidates_block, sources_text, "use_case_3", last_query_reference=last_query_reference)
 
     return create_llm_output_dict(llm_out, sources_for_prompt, "1", "2") # put in diff strings for used and user query so no refomrualtion 
