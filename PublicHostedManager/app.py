@@ -296,6 +296,15 @@ HTML_INDEX = """<!DOCTYPE html>
     .citation-pill a:hover {
       text-decoration: underline;
     }
+    .reformulated-box {
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 0.5rem;
+      border-radius: 10px;
+      background: #F9FAFB;
+      border: 1px solid rgba(148,163,184,0.8);
+      font-size: 0.85rem;
+      color: #111827;
+    }
 
     /* Summary line layout for expand feature */
     .summary-line-main {
@@ -398,16 +407,22 @@ HTML_INDEX = """<!DOCTYPE html>
       <div id="results" class="results">
         <!-- SUMMARY (always visible) -->
         <div class="results-section">
-          <div class="results-header">
-            <div class="results-header-main">
-              <span>Summary</span>
-              <span class="pill" id="summary-pill">Waiting for query…</span>
-            </div>
+        <div class="results-header">
+          <div class="results-header-main">
+            <span>Summary</span>
+            <span class="pill" id="summary-pill">Waiting for query…</span>
           </div>
-          <div id="summary-content" class="summary-content">
-            <em>No results yet.</em>
-          </div>
+          <!-- New small toggle button in the top-right of the bubble -->
+          <button type="button" class="section-toggle" id="reformulate-toggle">
+            Reformulation: On
+          </button>
         </div>
+        <div id="summary-content" class="summary-content">
+          <em>No results yet.</em>
+        </div>
+      </div>
+
+
 
         <!-- SOURCES (collapsible) -->
         <div class="results-section">
@@ -478,6 +493,10 @@ HTML_INDEX = """<!DOCTYPE html>
     const citationsBodyEl = document.getElementById("citations-body");
     const rawBodyEl = document.getElementById("raw-body");
 
+    const reformulateToggleEl = document.getElementById("reformulate-toggle");
+    let reformulateEnabled = true;  // default behaviour = reformulate
+
+
     function escapeHtml(str) {
       return String(str)
         .replace(/&/g, "&amp;")
@@ -503,6 +522,23 @@ HTML_INDEX = """<!DOCTYPE html>
       bodyEl.style.display = "none";
       toggleEl.textContent = showLabel;
     }
+
+    function updateReformulateToggleLabel() {
+      if (!reformulateToggleEl) return;
+      reformulateToggleEl.textContent = reformulateEnabled
+        ? "Reformulation: On"
+        : "Reformulation: Off";
+    }
+
+    if (reformulateToggleEl) {
+      reformulateToggleEl.addEventListener("click", () => {
+        reformulateEnabled = !reformulateEnabled;
+        updateReformulateToggleLabel();
+      });
+      // initialise label on load
+      updateReformulateToggleLabel();
+    }
+
 
     async function pollExpandJob(jobId, slotEl, btnEl) {
       if (btnEl) btnEl.disabled = true;
@@ -613,7 +649,23 @@ HTML_INDEX = """<!DOCTYPE html>
       const citations = Array.isArray(data.inline_citations) ? data.inline_citations : [];
       const summary = data.summary || "";
 
+      const reformulated = !!data.reformulated;
+      const usedQuery = data.used_query || "";
+
+
       // ===== 1) SUMMARY (bullets + citation pills + expand buttons) =====
+      const summaryHtmlPieces = [];
+
+      // If backend says the query was reformulated, show the sub-box at the top.
+      if (reformulated && usedQuery) {
+        summaryHtmlPieces.push(
+          '<div class="reformulated-box">' +
+            '<strong>Reformulated query:</strong> ' +
+            escapeHtml(usedQuery) +
+          '</div>'
+        );
+      }
+
       if (summary) {
         const lines = summary.split("\\n").filter(line => line.trim().length > 0);
         const itemsHtml = lines.map((line, idx) => {
@@ -713,10 +765,15 @@ HTML_INDEX = """<!DOCTYPE html>
           );
         }).join("");
 
-        summaryContentEl.innerHTML = "<ul>" + itemsHtml + "</ul>";
+        summaryHtmlPieces.push("<ul>" + itemsHtml + "</ul>");
       } else {
-        summaryContentEl.innerHTML = "<em>No summary returned.</em>";
+        summaryHtmlPieces.push("<em>No summary returned.</em>");
       }
+
+      summaryContentEl.innerHTML = summaryHtmlPieces.join("");
+      // Wire expand buttons after rendering summary
+      wireExpandButtons();
+
 
       // ===== 2) SOURCES =====
       sourcesCountEl.textContent = sources.length + (sources.length === 1 ? " doc" : " docs");
@@ -853,8 +910,13 @@ HTML_INDEX = """<!DOCTYPE html>
         const resp = await fetch("/api/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ q: q, top_k: 5 })
+          body: JSON.stringify({
+            q: q,
+            top_k: 5,
+            reformulate: reformulateEnabled
+          })
         });
+
 
         if (!resp.ok) {
           const text = await resp.text();
@@ -932,6 +994,13 @@ def submit():
     q = (data.get("q") or "").strip()
     top_k = data.get("top_k") or 5
 
+    # new: optional reformulation flag from frontend
+    reformulate = data.get("reformulate")
+    if reformulate is None:
+        reformulate_flag = True  # default behaviour
+    else:
+        reformulate_flag = bool(reformulate)
+
     if not q:
         return jsonify({"error": "Query cannot be empty"}), 400
 
@@ -942,6 +1011,7 @@ def submit():
         "top_k": int(top_k),
         "status": "pending",
         "result": None,
+        "reformulate": reformulate_flag,  # <-- stored on job
     }
 
     with jobs_lock:
@@ -1080,14 +1150,15 @@ def admin_next_job():
             if job["status"] == "pending":
                 job["status"] = "processing"
                 return jsonify(
-                    {
-                        "id": job["id"],
-                        "job_type": job.get("job_type", "search"),
-                        "query": job.get("query"),
-                        "doc_id": job.get("doc_id"),
-                        "top_k": job.get("top_k", 5),
-                        "status": job["status"],
-                    }
-                )
+                  {
+                      "id": job["id"],
+                      "job_type": job.get("job_type", "search"),
+                      "query": job.get("query"),
+                      "doc_id": job.get("doc_id"),
+                      "top_k": job.get("top_k", 5),
+                      "reformulate": job.get("reformulate", True),  # <-- new
+                      "status": job["status"],
+                  }
+              )
 
     return jsonify({"id": None, "status": "idle"})

@@ -1403,7 +1403,7 @@ def build_click_url_from_row(
 # =========================================
 # MAIN
 # =========================================
-def main(q, top_k, conn):
+def main(q, top_k, conn, reformulate):
     print(f"query_manager:main:-------- FLOW: entered overview with q='{q}' top_k={top_k}")
     top_k = 5
 
@@ -1560,6 +1560,7 @@ def main(q, top_k, conn):
         user_query=q,
         use_case="use_case_1",  # keep as-is unless you want to branch on use_case
         sources_for_prompt=sources_for_prompt,
+        reformulate=reformulate
     )
 
     # =========================================
