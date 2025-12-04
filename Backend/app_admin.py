@@ -13,6 +13,7 @@ import os
 
 
 PA_BASE_URL = "https://RM1234567890.pythonanywhere.com"
+# PA_BASE_URL = "http://127.0.0.1:5000/"
 
 
 ADMIN_API_KEY = "something_super_secrete_adfjdafhkjlkhethjlkj235770984175%$H^^GFS$^#$YSGHS^E$^HGASDFfadhfjahjlkh"
@@ -54,6 +55,7 @@ def send_job_result(job_id: str, result: Dict[str, Any]) -> None:
 def process_job(job: Dict[str, Any]) -> None:
     job_id = job["id"]
     q = job["query"]
+    reformulate = job['reformulate']
     top_k = job.get("top_k", 5)
     job_type = job.get("job_type", "search")
 
@@ -62,7 +64,7 @@ def process_job(job: Dict[str, Any]) -> None:
     conn = database_manager.db(config.DB_PATH_MAIN)
     try:
         if job_type == "search": 
-            result = query_manager.main(q, top_k, conn)
+            result = query_manager.main(q, top_k, conn, reformulate)
             sources = result.get("sources") or []
             citations = result.get("inline_citations") or []
 
@@ -175,20 +177,29 @@ def upload_pdf(job_id: str, doc_id: str, pdf_path: str) -> None:
 def main_loop():
     print("[worker] Starting admin worker loop…")
     while True:
-        try:
-            job = fetch_next_job()
-            if not job:
-                time.sleep(2.0)
-                continue
+        # try:
+        #     job = fetch_next_job()
+        #     if not job:
+        #         time.sleep(2.0)
+        #         continue
 
-            process_job(job)
+        #     process_job(job)
 
-        except KeyboardInterrupt:
-            print("[worker] Stopping due to keyboard interrupt.")
-            break
-        except Exception as e:
-            print(f"[worker] Error: {e!r}")
-            time.sleep(5.0)
+        # except KeyboardInterrupt:
+        #     print("[worker] Stopping due to keyboard interrupt.")
+        #     break
+        # except Exception as e:
+        #     print(f"[worker] Error: {e!r}")
+        #     time.sleep(5.0)
+
+        job = fetch_next_job()
+        if not job:
+            time.sleep(2.0)
+            continue
+
+        process_job(job)
+
+
 
 
 if __name__ == "__main__":
